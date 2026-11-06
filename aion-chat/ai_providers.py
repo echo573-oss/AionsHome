@@ -1336,6 +1336,15 @@ def _find_codex_script() -> str | None:
     return None
 
 _CODEX_SCRIPT: str | None = _find_codex_script()
+
+
+def get_codex_script() -> str | None:
+    """Re-resolve when startup raced ahead of Connor-Codex install."""
+    global _CODEX_SCRIPT
+    if not _CODEX_SCRIPT:
+        _CODEX_SCRIPT = _find_codex_script()
+    return _CODEX_SCRIPT
+
 _CODEX_WORKSPACE: str = str(Path(__file__).parent.parent)
 _CODEX_HOME: str = os.environ.get("CODEX_HOME") or str(Path.home() / ".codex")
 _CODEX_CHAT_HOME: str = str(
@@ -1440,7 +1449,7 @@ def _build_codex_chat_environment(base_env: dict | None = None) -> dict:
     }
     if _CODEX_SCRIPT:
         prepare_chat_model_catalog(
-            chat_home, shutil.which("node") or "node", _CODEX_SCRIPT,
+            chat_home, shutil.which("node") or "node", get_codex_script(),
             source_cache=Path(_CODEX_HOME) / "models_cache.json",
         )
     # Keep the growing skill list off argv: Windows limits command lines to 32K.
@@ -1623,7 +1632,7 @@ async def call_codex_cli(messages: list, model: str, meta: dict | None = None,
     prompt = _build_cli_prompt(messages, include_image_refs=False)
 
     node = shutil.which("node") or "node"
-    if not _CODEX_SCRIPT:
+    if not get_codex_script():
         yield "[CodexCLI错误] 未找到 Codex CLI，请检查 Connor-Codex/node_modules/@openai/codex 是否已安装"
         return
 
@@ -1633,7 +1642,7 @@ async def call_codex_cli(messages: list, model: str, meta: dict | None = None,
 
     cmd = _build_codex_chat_command(
         node,
-        _CODEX_SCRIPT,
+        get_codex_script(),
         _CODEX_WORKSPACE,
         model,
         image_paths=image_paths,
@@ -1685,11 +1694,11 @@ async def call_codex_sentinel(
     use_chat_slot: bool = True,
 ) -> str:
     """Run one isolated Luna sentinel turn through the local Codex login."""
-    if not _CODEX_SCRIPT:
+    if not get_codex_script():
         raise RuntimeError("未找到 Codex CLI，无法使用 GPT-5.6 Luna 哨兵线路")
 
     node = shutil.which("node") or "node"
-    command = _build_codex_sentinel_command(node, _CODEX_SCRIPT)
+    command = _build_codex_sentinel_command(node, get_codex_script())
     env = _build_codex_chat_environment()
 
     async def _run(workspace: str, image_paths: list[str]) -> str:
