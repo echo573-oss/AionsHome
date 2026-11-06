@@ -327,6 +327,11 @@ BUILTIN_MODELS = {
     "Codex-5.6-Sol":      {"provider": "codex_cli",  "model": "gpt-5.6-sol", "vision": True, "transport_mode": "safe_live"},
     "Codex-6.1-Sol":   {"provider": "codex_cli",  "model": "gpt-6.1-sol", "vision": True, "transport_mode": "safe_live"},
     "Codex-6.1-Terra": {"provider": "codex_cli", "model": "gpt-6.1-terra","vision": True, "transport_mode": "safe_live",},
+    # ChatGPT plan usage via local SIWC sidecar (D:\\AionsHome-siwc-sidecar, :18765)
+    "ChatGPT-6.1-Sol": {"provider": "siwc", "model": "gpt-6.1-sol", "vision": False},
+    "ChatGPT-5.6-Sol": {"provider": "siwc", "model": "gpt-5.6-sol", "vision": False},
+    "ChatGPT-6-Astra": {"provider": "siwc", "model": "gpt-6-astra", "vision": False},
+
     # "Codex-Luna":     {"provider": "codex_cli",  "model": "gpt-5.6-luna", "vision": True},
     # "AGY（默认）": {"provider": "antigravity_cli", "model": "", "vision": False, "audio": False},
     
@@ -339,6 +344,15 @@ if VERTEX_CREDENTIALS_PATH.is_file():
 
 def _clean_text(value) -> str:
     return str(value or "").strip()
+
+
+SIWC_DEFAULT_BASE_URL = "http://127.0.0.1:18765"
+
+
+def get_siwc_base_url() -> str:
+    """Local Sign-in-with-ChatGPT sidecar base URL (loopback only)."""
+    raw = _clean_text(SETTINGS.get("siwc_base_url") or SIWC_DEFAULT_BASE_URL)
+    return raw.rstrip("/") or SIWC_DEFAULT_BASE_URL
 
 
 def normalize_model_transport_modes(value) -> dict[str, str]:

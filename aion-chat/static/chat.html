@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#ff8359">
-<link rel="stylesheet" href="/static/chat.css?v=20261025-line-indent">
+<link rel="stylesheet" href="/static/chat.css?v=20261106-tts-label">
 <link rel="stylesheet" href="/static/ai-message-editor.css?v=20260920">
 <link rel="stylesheet" href="/static/pat.css?v=inline-order-20260910">
 <link rel="stylesheet" href="/static/rps.css?v=20261019-rps-summary">
@@ -153,10 +153,10 @@
       <button class="home-btn" onclick="openSubPage('/')" title="返回主页">⬅</button>
       <button class="menu-btn" onclick="openSidebar()">☰</button>
       <div class="title" id="chatTitle" onclick="renameCurrent()">Aion Chat</div>
-      <div class="tts-toggle" title="自动语音播放">
-        <span class="tts-label">🔊</span>
+      <div class="tts-toggle" title="自动朗读新回复">
+        <label class="tts-label" for="ttsToggle">朗读</label>
         <label class="toggle-switch">
-          <input type="checkbox" id="ttsToggle" onchange="toggleTTS()">
+          <input type="checkbox" id="ttsToggle" aria-label="自动朗读新回复" onchange="toggleTTS()">
           <span class="toggle-slider"></span>
         </label>
       </div>
@@ -176,9 +176,20 @@
         <input type="range" id="contextSlider" min="1" max="100" value="30" oninput="document.getElementById('contextValue').textContent=this.value+'条'; localStorage.setItem('aion_context_limit', this.value)">
         <span class="slider-val" id="contextValue">30条</span>
       </div>
-      <label>模型温度</label>
+      <label id="siwcEffortLabel">推理强度（ChatGPT）</label>
+      <select id="siwcEffortSelect" onchange="syncSiwcEffort()" style="width:100%;margin-bottom:10px">
+        <option value="default">默认（不传）</option>
+        <option value="low">低</option>
+        <option value="medium" selected>中</option>
+        <option value="high">高</option>
+        <option value="xhigh">更高</option>
+        <option value="minimal">极低</option>
+        <option value="none">无</option>
+      </select>
+      <label for="tempSlider">模型温度</label>
+      <p class="config-setting-hint" id="temperatureHint">仅部分功能和模型线路使用。普通聊天与 SIWC 线路不会使用此值。</p>
       <div class="slider-row">
-        <input type="range" id="tempSlider" min="0" max="2" step="0.1" value="1" oninput="document.getElementById('tempValue').textContent=this.value; localStorage.setItem('aion_temperature', this.value); syncTemperature()">
+        <input type="range" id="tempSlider" aria-describedby="temperatureHint" min="0" max="2" step="0.1" value="1" oninput="document.getElementById('tempValue').textContent=this.value; localStorage.setItem('aion_temperature', this.value); syncTemperature()">
         <span class="slider-val" id="tempValue">1</span>
       </div>
       <label>最大回复长度</label>
@@ -393,7 +404,7 @@ window.AionSubPageNavigation = (() => {
 </script>
 <script id="initial-desktop">
 // Start the desktop before any external chat script can block the parser.
-// chat.js adopts this same frame once it is ready, preserving early navigation.
+// chat.js?v=siwc1 adopts this same frame once it is ready, preserving early navigation.
 (() => {
   const launchParams = new URLSearchParams(location.search);
   if (launchParams.has('conv')) return;

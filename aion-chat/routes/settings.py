@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional, Literal
 
 import httpx
 
-from config import SETTINGS, save_settings, get_key, get_sentinel_config, load_worldbook, save_worldbook, load_chat_status, TTS_CACHE_DIR, TTS_CACHE_MAX_BYTES, THEATER_TTS_CACHE_DIR, normalize_custom_model_routes, normalize_model_transport_modes, normalize_sentinel_route, refresh_custom_models, iter_visible_models, resolve_model_transport_mode, model_supports_safe_live
+from config import SETTINGS, save_settings, get_key, get_sentinel_config, load_worldbook, save_worldbook, load_chat_status, TTS_CACHE_DIR, TTS_CACHE_MAX_BYTES, THEATER_TTS_CACHE_DIR, normalize_custom_model_routes, normalize_model_transport_modes, normalize_sentinel_route, refresh_custom_models, iter_visible_models, resolve_model_transport_mode, model_supports_safe_live, get_siwc_base_url
 from tts import cleanup_tts_cache_dir, _request_tts_audio, EDGE_VOICES, MINIMAX_TTS_MODELS, MINIMAX_VOICE_PREFIX
 from config import EXPRESSIVE_VOICE_DIR
 from ws import manager
@@ -54,6 +54,7 @@ async def list_models():
 
 # ── 设置 ──────────────────────────────────────────
 class SettingsUpdate(BaseModel):
+    siwc_base_url: Optional[str] = None
     asr_provider: Optional[str] = None
     asr_base_url: Optional[str] = None
     asr_api_key: Optional[str] = None
@@ -171,6 +172,9 @@ async def get_settings():
         "luckin_default_shop_keyword": SETTINGS.get("luckin_default_shop_keyword", ""),
         "custom_model_routes": normalize_custom_model_routes(SETTINGS.get("custom_model_routes")),
         "model_transport_modes": normalize_model_transport_modes(SETTINGS.get("model_transport_modes")),
+        "siwc_base_url": get_siwc_base_url(),
+        "siwc_usage_url": "https://chatgpt.com/settings/usage",
+        "siwc_reasoning_effort": (SETTINGS.get("siwc_reasoning_effort") or "medium"),
         "gemini_key_masked": mask(SETTINGS.get("gemini_key", "")),
         "siliconflow_key_masked": mask(SETTINGS.get("siliconflow_key", "")),
         "minimax_tts_key_masked": mask(SETTINGS.get("minimax_tts_key", "")),
@@ -238,6 +242,8 @@ async def update_settings(body: SettingsUpdate):
         SETTINGS["gemini_key"] = body.gemini_key
     if body.siliconflow_key is not None:
         SETTINGS["siliconflow_key"] = body.siliconflow_key
+    if body.siwc_base_url is not None:
+        SETTINGS["siwc_base_url"] = (body.siwc_base_url or "").strip() or "http://127.0.0.1:18765"
     if body.minimax_tts_key is not None:
         SETTINGS["minimax_tts_key"] = body.minimax_tts_key.strip()
     if body.minimax_tts_model is not None:
@@ -308,12 +314,26 @@ async def update_settings(body: SettingsUpdate):
 class TempUpdate(BaseModel):
     temperature: float
 
+class SiwcEffortUpdate(BaseModel):
+    reasoning_effort: str = "medium"
+
 @router.put("/api/settings/temperature")
 async def update_temperature(body: TempUpdate):
     SETTINGS["temperature"] = body.temperature
     save_settings(SETTINGS)
     return {"ok": True}
 
+
+
+@router.put("/api/settings/siwc_reasoning_effort")
+async def update_siwc_reasoning_effort(body: SiwcEffortUpdate):
+    allowed = {"", "default", "none", "minimal", "low", "medium", "high", "xhigh"}
+    effort = (body.reasoning_effort or "").strip().lower()
+    if effort not in allowed:
+        raise HTTPException(400, f"unsupported reasoning_effort: {effort}")
+    SETTINGS["siwc_reasoning_effort"] = effort
+    save_settings(SETTINGS)
+    return {"ok": True, "siwc_reasoning_effort": effort}
 # ── 视频通话开关 ──────────────────────────────────
 @router.get("/api/settings/video-call")
 async def get_video_call_setting():
@@ -701,3 +721,64 @@ async def set_edge_voice_favorite(body: EdgeVoiceFavorite):
     save_settings(updated)
     SETTINGS["edge_tts_favorites"] = updated["edge_tts_favorites"]
     return await edge_voice_catalog()
+
+
+# ── SIWC sidecar (ChatGPT plan usage) ──────────────
+@router.get("/api/siwc/health")
+async def siwc_health():
+    base = get_siwc_base_url()
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{base}/health")
+            data = resp.json() if resp.status_code == 200 else {"ok": False, "status": resp.status_code, "body": resp.text[:500]}
+            return {"ok": resp.status_code == 200, "base_url": base, "sidecar": data}
+    except Exception as exc:
+        return {"ok": False, "base_url": base, "error": str(exc), "hint": "请先启动 D:\\AionsHome-siwc-sidecar 的 npm run serve"}
+
+
+@router.get("/api/siwc/session")
+async def siwc_session():
+    base = get_siwc_base_url()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{base}/session")
+            if resp.status_code != 200:
+                raise HTTPException(resp.status_code, resp.text[:500] or "sidecar session failed")
+            data = resp.json()
+            data["base_url"] = base
+            data.setdefault("usageUrl", "https://chatgpt.com/settings/usage")
+            return data
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(503, f"无法连接 SIWC sidecar ({base}): {exc}")
+
+
+@router.post("/api/siwc/signin")
+async def siwc_signin():
+    """Trigger Continue with ChatGPT on the sidecar (opens system browser)."""
+    base = get_siwc_base_url()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(f"{base}/signin")
+            body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {"raw": resp.text[:500]}
+            return {"ok": resp.status_code in (200, 202), "status_code": resp.status_code, "base_url": base, "sidecar": body,
+                    "usageUrl": "https://chatgpt.com/settings/usage"}
+    except Exception as exc:
+        raise HTTPException(503, f"无法连接 SIWC sidecar ({base}): {exc}")
+
+
+@router.get("/api/siwc/models")
+async def siwc_models():
+    base = get_siwc_base_url()
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(f"{base}/models")
+            if resp.status_code != 200:
+                raise HTTPException(resp.status_code, resp.text[:500] or "sidecar models failed")
+            return resp.json()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(503, f"无法连接 SIWC sidecar ({base}): {exc}")
+

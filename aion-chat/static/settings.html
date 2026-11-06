@@ -637,7 +637,31 @@ body[data-theme="light"] .transport-mode-btn.is-active {
       </div>
     </details>
 
-    <details class="settings-card">
+    <details class="settings-card" open>
+      <summary>
+        <div class="summary-title">
+          <strong>ChatGPT 计划用量（SIWC）</strong>
+          <span>私聊 / 聊天室 Aion 可走 ChatGPT Plus·Pro 额度；Connor-Codex 仍用 Codex</span>
+        </div>
+        <span class="summary-chevron">▾</span>
+      </summary>
+      <div class="card-body">
+        <p class="hint">旁路服务默认 <code>http://127.0.0.1:18765</code>。先启动 sidecar，再在本页登录。模型列表会出现 <code>ChatGPT-*-Sol</code> 等选项。</p>
+        <div class="field full">
+          <label class="form-label" for="siwcBaseUrlInput">Sidecar 地址</label>
+          <input class="form-input mono-input" type="text" id="siwcBaseUrlInput" placeholder="http://127.0.0.1:18765" autocomplete="off">
+        </div>
+        <p id="siwcStatus" class="hint" role="status">正在检测 SIWC 状态…</p>
+        <div class="section-actions" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
+          <button class="action-btn primary" type="button" onclick="siwcContinueWithChatGPT()">Continue with ChatGPT</button>
+          <button class="action-btn" type="button" onclick="refreshSiwcStatus()">刷新状态</button>
+          <a class="action-btn" id="siwcManageUsageLink" href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener">Manage usage</a>
+        </div>
+        <p class="hint">状态显示 Using ChatGPT plan 即表示 token sharing 已开。首次需在浏览器点同意 plan usage。</p>
+      </div>
+    </details>
+
+<details class="settings-card" open>
       <summary>
         <div class="summary-title">
           <strong>🔑 API 与基础账号</strong>
@@ -1262,6 +1286,44 @@ function updateAsrProviderUi(usePreset) {
   }
 }
 
+
+async function refreshSiwcStatus() {
+  var el = $("siwcStatus");
+  if (!el) return;
+  el.textContent = "正在检测 SIWC…";
+  try {
+    var health = await api("GET", "/api/siwc/health");
+    if (!health.ok) {
+      el.textContent = "Sidecar 未运行（" + (health.base_url || "") + "）。请先在 D:\\AionsHome-siwc-sidecar 执行 npm run serve。" + (health.error ? (" " + health.error) : "");
+      return;
+    }
+    var sess = await api("GET", "/api/siwc/session");
+    var s = (sess && sess.session) || {};
+    var using = s.status === "connected" && s.sharing;
+    var who = (s.identity && (s.identity.email || s.identity.name)) || s.profileLabel || "";
+    el.textContent = using
+      ? ("Using ChatGPT plan" + (who ? (" · " + who) : ""))
+      : ("已连接 sidecar，但未启用 plan usage（status=" + (s.status || "?") + ", sharing=" + !!s.sharing + "）。请点 Continue with ChatGPT。");
+    if (sess.usageUrl && $("siwcManageUsageLink")) $("siwcManageUsageLink").href = sess.usageUrl;
+  } catch (err) {
+    el.textContent = (err && err.message) || "SIWC 状态读取失败";
+  }
+}
+async function siwcContinueWithChatGPT() {
+  var el = $("siwcStatus");
+  if (el) el.textContent = "正在打开 Continue with ChatGPT…";
+  try {
+    var r = await api("POST", "/api/siwc/signin");
+    if (el) el.textContent = "已请求登录。请在弹出的浏览器完成授权；完成后点刷新状态。";
+    showToast("请在浏览器完成 Continue with ChatGPT");
+    setTimeout(refreshSiwcStatus, 4000);
+    return r;
+  } catch (err) {
+    if (el) el.textContent = (err && err.message) || "发起登录失败";
+    showToast((err && err.message) || "发起登录失败");
+  }
+}
+
 (async function init() {
   var s = await api("GET", "/api/settings");
   $("geminiKeyInput").value = s.gemini_key || "";
@@ -1305,6 +1367,8 @@ function updateAsrProviderUi(usePreset) {
   $("luckinLongitudeInput").value = s.luckin_default_longitude || "";
   $("luckinLatitudeInput").value = s.luckin_default_latitude || "";
   $("luckinShopKeywordInput").value = s.luckin_default_shop_keyword || "";
+  $("siwcBaseUrlInput").value = s.siwc_base_url || "http://127.0.0.1:18765";
+  refreshSiwcStatus();
   customModelRoutes = normalizeRoutesForUi(s.custom_model_routes || []);
   renderCustomRoutes();
   renderModelTransportModes();
@@ -1397,6 +1461,7 @@ async function saveSettings() {
     ...(imageGenProvider === "existing" ? imageConfig : {}),
     ...(imageGenProvider === "flowai" ? {flowai_image_model: $("flowaiModelInput").value} : {}),
     siliconflow_key: $("sfKeyInput").value.trim(),
+    siwc_base_url: $("siwcBaseUrlInput").value.trim() || "http://127.0.0.1:18765",
     minimax_tts_key: $("minimaxTtsKeyInput").value.trim(),
     ...elevenSettings(),
     minimax_tts_model: $("minimaxTtsModelInput").value,

@@ -14,7 +14,7 @@ from system_logs import logged_ai_call, record_cli_prompt, record_sent_messages
 import httpx
 import tempfile
 
-from config import get_key, MODELS, UPLOADS_DIR, ALBUM_IMAGES_DIR, CODEX_UPLOADS_DIR, SCREENSHOTS_DIR, SETTINGS, get_sentinel_config, DATA_DIR, resolve_model_key, is_model_deprecated
+from config import get_key, MODELS, UPLOADS_DIR, ALBUM_IMAGES_DIR, CODEX_UPLOADS_DIR, SCREENSHOTS_DIR, SETTINGS, get_sentinel_config, DATA_DIR, resolve_model_key, is_model_deprecated, get_siwc_base_url
 from codex_app_server import (
     CodexAppServerEvent,
     build_codex_app_server_command,
@@ -1965,6 +1965,121 @@ def with_current_device_context(
     return prepared
 
 
+
+# ── SIWC sidecar (Sign in with ChatGPT plan usage) ──
+def _siwc_text_messages(messages: list) -> list[dict]:
+    """Flatten multimodal history to text-only roles SIWC accepts."""
+    out: list[dict] = []
+    for raw in messages or []:
+        if not isinstance(raw, dict):
+            continue
+        role = str(raw.get("role") or "user")
+        content = raw.get("content")
+        if isinstance(content, list):
+            parts = []
+            for part in content:
+                if isinstance(part, str):
+                    parts.append(part)
+                elif isinstance(part, dict):
+                    if isinstance(part.get("text"), str):
+                        parts.append(part["text"])
+                    elif part.get("type") in ("text", "input_text") and isinstance(part.get("text"), str):
+                        parts.append(part["text"])
+                    elif isinstance(part.get("content"), str):
+                        parts.append(part["content"])
+            content = "\n".join(p for p in parts if p)
+        elif content is None:
+            content = ""
+        else:
+            content = str(content)
+        content = content.strip()
+        if not content:
+            continue
+        if role in ("cam_user", "cam_trigger"):
+            role = "user"
+        elif role == "cam_log":
+            role = "assistant"
+        out.append({"role": role, "content": content})
+    return out
+
+
+@logged_ai_call("siwc")
+async def call_siwc(messages: list, model: str, meta: dict | None = None,
+                    temperature: float | None = None, max_tokens: int | None = None,
+                    request_timeout: float = 180):
+    """Stream chat via local SIWC sidecar OpenAI-compatible SSE."""
+    base = get_siwc_base_url()
+    url = f"{base}/v1/chat/completions"
+    api_messages = _siwc_text_messages(messages)
+    if not api_messages:
+        yield "[SIWC错误] 没有可发送的文本消息"
+        return
+    payload = {
+        "model": (model or "").strip(),
+        "messages": api_messages,
+        "stream": True,
+    }
+    if temperature is not None:
+        payload["temperature"] = temperature
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
+    # SIWC Responses reasoning.effort (optional; sidecar validates allowed values)
+    effort = str(SETTINGS.get("siwc_reasoning_effort") or "").strip().lower()
+    if effort and effort not in ("default", "auto", ""):
+        payload["reasoning_effort"] = effort
+    if not payload["model"]:
+        yield "[SIWC错误] 缺少模型名"
+        return
+    try:
+        async with httpx.AsyncClient(timeout=request_timeout) as client:
+            try:
+                async with client.stream("POST", url, json=payload) as resp:
+                    own_stream(resp)
+                    if resp.status_code != 200:
+                        body = await resp.aread()
+                        detail = _decode_relay_body(body)
+                        if meta is not None:
+                            meta["provider_error"] = f"HTTP {resp.status_code}: {detail}"
+                        if resp.status_code in (401, 403):
+                            yield f"[SIWC错误] {detail}（请确认 sidecar 已登录且 sharing=true：npm run session）"
+                        else:
+                            yield f"[SIWC错误] HTTP {resp.status_code}: {detail}"
+                        return
+                    async for line in resp.aiter_lines():
+                        data = _openai_sse_data(line)
+                        if data is None:
+                            continue
+                        if data == "[DONE]":
+                            return
+                        try:
+                            chunk = json.loads(data)
+                        except Exception:
+                            continue
+                        if isinstance(chunk, dict) and chunk.get("error"):
+                            err = chunk["error"]
+                            msg = err.get("message") if isinstance(err, dict) else str(err)
+                            if meta is not None:
+                                meta["provider_error"] = msg
+                            yield f"[SIWC错误] {msg}"
+                            return
+                        choice = chunk["choices"][0] if chunk.get("choices") else {}
+                        delta = choice.get("delta") or {}
+                        if delta.get("content"):
+                            yield delta["content"]
+            except httpx.ConnectError:
+                if meta is not None:
+                    meta["provider_error"] = f"connect_error:{base}"
+                yield (
+                    f"[SIWC错误] 无法连接 sidecar {base}。"
+                    "请先在 D:\\AionsHome-siwc-sidecar 运行 npm run serve（需 Clash 7897）。"
+                )
+                return
+    except httpx.TimeoutException:
+        if meta is not None:
+            meta["provider_timeout"] = request_timeout
+        raise
+
+
 async def stream_ai(messages: list, model_key: str, meta: dict | None = None, temperature: float | None = None, max_tokens: int | None = None, cancel_event=None, *, include_device_context: bool = True, request_timeout: float = 120):
     if include_device_context:
         messages = with_current_device_context(messages)
@@ -2020,6 +2135,9 @@ async def stream_ai(messages: list, model_key: str, meta: dict | None = None, te
                 yield chunk
         elif cfg["provider"] == "codex_cli":
             async for chunk in call_codex_cli(normalized, cfg["model"], meta, temperature, max_tokens):
+                yield chunk
+        elif cfg["provider"] == "siwc":
+            async for chunk in call_siwc(normalized, cfg["model"], meta, temperature, max_tokens, request_timeout=request_timeout):
                 yield chunk
         else:
             yield f"[閿欒] 鏈煡 provider: {cfg.get('provider')}"

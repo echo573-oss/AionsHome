@@ -166,6 +166,10 @@ async function init() {
   if (savedCtx) { $("contextSlider").value = savedCtx; $("contextValue").textContent = savedCtx + '条'; }
   // 恢复温度设置
   const savedTemp = localStorage.getItem('aion_temperature');
+  const savedSiwcEffort = localStorage.getItem('aion_siwc_reasoning_effort');
+  if (savedSiwcEffort && document.getElementById('siwcEffortSelect')) {
+    document.getElementById('siwcEffortSelect').value = savedSiwcEffort;
+  }
   if (savedTemp) { $("tempSlider").value = savedTemp; $("tempValue").textContent = savedTemp; }
   // 恢复最大回复长度设置
   const savedMaxTokens = localStorage.getItem('aion_max_tokens');
@@ -420,6 +424,19 @@ async function rerollIntimacyPreview() {
 }
 
 // 同步温度到后端 settings
+
+async function syncSiwcEffort() {
+  const el = document.getElementById("siwcEffortSelect");
+  if (!el) return;
+  const v = el.value || "default";
+  localStorage.setItem("aion_siwc_reasoning_effort", v);
+  try {
+    await api("PUT", "/api/settings/siwc_reasoning_effort", { reasoning_effort: v });
+  } catch (e) {
+    console.warn("syncSiwcEffort failed", e);
+  }
+}
+
 async function syncTemperature() {
   const t = parseFloat($("tempSlider").value);
   await api("PUT", "/api/settings/temperature", { temperature: t });
@@ -1940,7 +1957,10 @@ function formatPrivateSystemNoticeContent(content) {
 
 // ── 渲染 ──
 function renderModelSelect() {
-  const visibleModels = models.filter(m => !DEPRECATED_MODEL_PROVIDERS.has(m.provider));
+  const visibleModels = models
+    .filter(m => !DEPRECATED_MODEL_PROVIDERS.has(m.provider))
+    .slice()
+    .sort((a, b) => Number(b.provider === 'siwc') - Number(a.provider === 'siwc'));
   $("modelSelect").innerHTML = visibleModels.map(m =>
     `<option value="${m.key}">${m.key}</option>`
   ).join("");

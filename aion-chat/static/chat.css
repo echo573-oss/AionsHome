@@ -891,6 +891,7 @@ body[data-theme="light"] .link-preview-card:hover {
 /* ── TTS 语音开关 ── */
 .tts-toggle { display:flex; align-items:center; gap:6px; flex-shrink:0; }
 .tts-label { font-size:16px; cursor:default; }
+.config-setting-hint { margin: 0 0 6px; font-size: 11px; line-height: 1.4; color: var(--text3); }
 .tts-voice-row { display:flex; align-items:center; gap:8px; margin:6px 0; }
 .tts-voice-row label { font-size:12px; color:var(--text2); white-space:nowrap; min-width:50px; }
 .tts-voice-row select { flex:1; background:var(--surface2); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:4px 6px; font-size:12px; outline:none; }
@@ -1816,12 +1817,12 @@ body[data-theme="light"] .plus-menu-item { text-shadow: none; }
   }
   .tts-toggle {
     display: flex;
-    width: 36px;
-    flex: 0 0 36px;
+    width: 64px;
+    flex: 0 0 64px;
     padding: 0;
     justify-content: center;
   }
-  .tts-toggle .tts-label { display: none; }
+  .tts-toggle .tts-label { font-size: 11px; white-space: nowrap; }
   .tts-toggle .toggle-switch { width: 34px; height: 20px; transform: none; }
   .tts-toggle .toggle-slider { border-radius: 999px; }
   .tts-toggle .toggle-slider:before { width: 14px; height: 14px; top: 2px; left: 2px; }
@@ -1906,8 +1907,8 @@ body[data-theme="light"] .plus-menu-item { text-shadow: none; }
   }
   .chat-header .title { font-size: 14px; min-width: 58px; }
   .tts-toggle {
-    width: 32px;
-    flex: 0 0 32px;
+    width: 60px;
+    flex: 0 0 60px;
     padding: 0;
     overflow: hidden;
   }
