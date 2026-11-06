@@ -571,6 +571,158 @@ class TTSRequest(BaseModel):
     voice: str = ""
     msg_id: Optional[str] = None
 
+
+class TTSEnsureRequest(BaseModel):
+    msg_id: str
+    text: Optional[str] = None
+    voice: Optional[str] = None
+    sender: Optional[str] = None
+
+
+def _safe_tts_msg_id(msg_id: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9_\-]", "", msg_id or "")
+
+
+def _ondemand_tts_cache_exists(msg_id: str) -> bool:
+    safe_id = _safe_tts_msg_id(msg_id)
+    if not safe_id:
+        return False
+    return (TTS_CACHE_DIR / f"{safe_id}_s0.mp3").exists()
+
+
+def _normalize_ondemand_tts_sender(sender: Optional[str]) -> str:
+    role = (sender or "").strip().lower()
+    if role in ("assistant", "ai", "aion"):
+        return "aion"
+    if role == "connor":
+        return "connor"
+    return "aion"
+
+
+def _resolve_ondemand_tts_voice(sender: Optional[str], voice: Optional[str]) -> str:
+    """Resolve voice for click-to-synthesize; ignores chatroom tts_enabled."""
+    if voice and str(voice).strip():
+        return str(voice).strip()
+    role = _normalize_ondemand_tts_sender(sender)
+    try:
+        from chatroom import load_chatroom_config
+        cfg = load_chatroom_config()
+        key = "tts_aion_voice" if role == "aion" else "tts_connor_voice"
+        configured = (cfg.get(key) or "").strip()
+        if configured:
+            return configured
+    except Exception:
+        pass
+    el_id = str(SETTINGS.get(f"elevenlabs_{role}_voice_id") or "").strip()
+    if el_id:
+        return f"elevenlabs:{el_id}"
+    if role == "connor":
+        el_id = str(SETTINGS.get("elevenlabs_aion_voice_id") or "").strip()
+        if el_id:
+            return f"elevenlabs:{el_id}"
+    return ""
+
+
+async def _lookup_message_for_ondemand_tts(msg_id: str):
+    import aiosqlite
+    from database import get_db
+
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("SELECT content, role FROM messages WHERE id=?", (msg_id,))
+        row = await cur.fetchone()
+        if row:
+            return (row["content"] or ""), _normalize_ondemand_tts_sender(row["role"])
+        cur = await db.execute(
+            "SELECT content, sender FROM chatroom_messages WHERE id=?",
+            (msg_id,),
+        )
+        row = await cur.fetchone()
+        if row:
+            return (row["content"] or ""), _normalize_ondemand_tts_sender(row["sender"])
+    return None, None
+
+
+@router.post("/api/tts/ensure")
+async def tts_ensure(body: TTSEnsureRequest):
+    """Synthesize segmented TTS cache on demand when replay has no _s0 yet.
+
+    Works even when chatroom/private auto TTS (tts_enabled) is off.
+    """
+    msg_id = _safe_tts_msg_id(body.msg_id)
+    if not msg_id:
+        return Response(
+            content=json.dumps({"ok": False, "error": "msg_id 无效"}),
+            status_code=400,
+            media_type="application/json",
+        )
+    if _ondemand_tts_cache_exists(msg_id):
+        return {"ok": True, "cached": True}
+
+    text = (body.text or "").strip()
+    sender = body.sender
+    if not text:
+        db_text, db_sender = await _lookup_message_for_ondemand_tts(msg_id)
+        if db_text is None:
+            return Response(
+                content=json.dumps({"ok": False, "error": "找不到该消息"}),
+                status_code=404,
+                media_type="application/json",
+            )
+        text = (db_text or "").strip()
+        if not sender:
+            sender = db_sender
+    if not text:
+        return Response(
+            content=json.dumps({"ok": False, "error": "消息文本为空"}),
+            status_code=400,
+            media_type="application/json",
+        )
+
+    voice = _resolve_ondemand_tts_voice(sender, body.voice)
+    if not voice:
+        return Response(
+            content=json.dumps({"ok": False, "error": "未配置可用音色"}),
+            status_code=400,
+            media_type="application/json",
+        )
+
+    if voice.startswith("elevenlabs:") and not get_key("elevenlabs"):
+        raise HTTPException(400, "未配置 ElevenLabs API Key")
+    if voice.startswith(MINIMAX_VOICE_PREFIX) and not get_key("minimax"):
+        return Response(
+            content=json.dumps({"ok": False, "error": "未配置 MiniMax 订阅 Key"}),
+            status_code=400,
+            media_type="application/json",
+        )
+    if not voice.startswith(("edge:", MINIMAX_VOICE_PREFIX, "elevenlabs:")) and not get_key("siliconflow"):
+        return Response(
+            content=json.dumps({"ok": False, "error": "未配置硅基流动 API Key"}),
+            status_code=400,
+            media_type="application/json",
+        )
+
+    try:
+        from tts import synthesize_message_tts
+
+        await synthesize_message_tts(msg_id, text, voice, manager)
+        if not _ondemand_tts_cache_exists(msg_id):
+            return Response(
+                content=json.dumps({"ok": False, "error": "语音合成失败，未生成缓存"}),
+                status_code=502,
+                media_type="application/json",
+            )
+        return {"ok": True, "cached": False}
+    except HTTPException:
+        raise
+    except Exception as e:
+        return Response(
+            content=json.dumps({"ok": False, "error": str(e)}),
+            status_code=500,
+            media_type="application/json",
+        )
+
+
 @router.post("/api/tts")
 async def tts_synthesize(body: TTSRequest):
     if body.voice.startswith("elevenlabs:") and not get_key("elevenlabs"):

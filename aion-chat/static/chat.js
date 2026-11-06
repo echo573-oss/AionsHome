@@ -1427,16 +1427,70 @@ async function replayTTS(msgId) {
       replayAudio.src = '';
       replayChunks = [];
       btn.classList.remove('playing');
+      btn.classList.remove('synthesizing');
+      btn.title = '重听语音';
       replayToken++;
       replayDiscoverPromise = null;
       return;
     }
+    if (btn && btn.classList.contains('synthesizing')) return;
     // 停止之前的播放
     replayAudio.pause();
     replayChunks = [];
     document.querySelectorAll('.tts-replay-btn.playing').forEach(b => b.classList.remove('playing'));
+    document.querySelectorAll('.tts-replay-btn.synthesizing').forEach(b => {
+      b.classList.remove('synthesizing');
+      b.title = '重听语音';
+    });
 
     const token = ++replayToken;
+    try {
+      replayAudio.muted = true;
+      replayAudio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+      await replayAudio.play().catch(() => {});
+      replayAudio.pause();
+      replayAudio.muted = false;
+      replayAudio.removeAttribute('src');
+      replayAudio.load();
+    } catch (e) {}
+
+    let hasCache = false;
+    try {
+      const head = await fetch(`/api/tts/audio/${msgId}_s0`, { method: 'HEAD' });
+      hasCache = !!head.ok;
+    } catch (e) { hasCache = false; }
+    if (token !== replayToken) return;
+
+    if (!hasCache) {
+      if (btn) {
+        btn.classList.add('synthesizing');
+        btn.title = '正在合成语音…';
+      }
+      try {
+        const msg = (typeof currentMessages !== 'undefined' ? currentMessages : []).find(m => m.id === msgId) || {};
+        const text = String(msg.content || '').replace(/<meta>[\s\S]*?<\/meta>/g, '').trim();
+        const voice = (typeof ttsVoiceId !== 'undefined' && ttsVoiceId) ? ttsVoiceId : '';
+        const resp = await fetch('/api/tts/ensure', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ msg_id: msgId, text, voice, sender: 'aion' }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (token !== replayToken) return;
+        if (!resp.ok || !data.ok) {
+          if (btn) { btn.classList.remove('synthesizing'); btn.title = '重听语音'; }
+          if (typeof showToast === 'function') showToast(data.error || data.detail || '语音合成失败');
+          return;
+        }
+      } catch (e) {
+        if (btn) { btn.classList.remove('synthesizing'); btn.title = '重听语音'; }
+        if (typeof showToast === 'function') showToast('语音合成失败：' + (e.message || e));
+        return;
+      }
+      if (btn) { btn.classList.remove('synthesizing'); btn.title = '重听语音'; }
+    }
+    if (token !== replayToken) return;
+
     replayChunks = [`/api/tts/audio/${msgId}_s0`];
     replayIdx = 0;
     if (btn) btn.classList.add('playing');

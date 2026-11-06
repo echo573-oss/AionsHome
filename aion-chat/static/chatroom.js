@@ -811,21 +811,78 @@ async function crReplayTTS(msgId, triggerBtn = null) {
   if (btn && btn.classList.contains('playing')) {
     crReplayAudio.pause(); crReplayAudio.src = ''; crReplayChunks = [];
     btn.classList.remove('playing');
+    btn.classList.remove('synthesizing');
+    btn.title = '重听语音';
     crReplayToken++;
     crReplayDiscoverPromise = null;
     crAmbientResumeAfterTts(500);
     return;
   }
+  if (btn && btn.classList.contains('synthesizing')) return;
   crReplayAudio.pause(); crReplayChunks = [];
   document.querySelectorAll('.tts-replay-btn.playing').forEach(b => b.classList.remove('playing'));
+  document.querySelectorAll('.tts-replay-btn.synthesizing').forEach(b => {
+    b.classList.remove('synthesizing');
+    b.title = '重听语音';
+  });
 
   const token = ++crReplayToken;
+  // 点按瞬间解锁音频，避免 await 合成后丢失浏览器播放许可。
+  try {
+    crReplayAudio.muted = true;
+    crReplayAudio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+    await crReplayAudio.play().catch(() => {});
+    crReplayAudio.pause();
+    crReplayAudio.muted = false;
+    crReplayAudio.removeAttribute('src');
+    crReplayAudio.load();
+  } catch (e) {}
+
+  let hasCache = false;
+  try {
+    const head = await fetch(`/api/tts/audio/${msgId}_s0`, { method: 'HEAD' });
+    hasCache = !!head.ok;
+  } catch (e) { hasCache = false; }
+  if (token !== crReplayToken) return;
+
+  if (!hasCache) {
+    if (btn) {
+      btn.classList.add('synthesizing');
+      btn.title = '正在合成语音…';
+    }
+    try {
+      const msg = crMessagesById[msgId] || {};
+      const sender = crSenderForTTSMsg(msgId);
+      const voice = sender === 'connor'
+        ? (crTtsConnorVoice || crTtsAionVoice || '')
+        : (crTtsAionVoice || crTtsConnorVoice || '');
+      const text = String(msg.content || '').replace(/<meta>[\s\S]*?<\/meta>/g, '').trim();
+      const resp = await fetch('/api/tts/ensure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ msg_id: msgId, text, voice, sender }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (token !== crReplayToken) return;
+      if (!resp.ok || !data.ok) {
+        if (btn) { btn.classList.remove('synthesizing'); btn.title = '重听语音'; }
+        try { toast(data.error || data.detail || '语音合成失败'); } catch (e) {}
+        return;
+      }
+    } catch (e) {
+      if (btn) { btn.classList.remove('synthesizing'); btn.title = '重听语音'; }
+      try { toast('语音合成失败：' + (e.message || e)); } catch (err) {}
+      return;
+    }
+    if (btn) { btn.classList.remove('synthesizing'); btn.title = '重听语音'; }
+  }
+  if (token !== crReplayToken) return;
+
   crReplayChunks = [`/api/tts/audio/${msgId}_s0`];
   crReplayIdx = 0;
   if (btn) btn.classList.add('playing');
   crAmbientPauseForTts();
 
-  // 先在用户点击同步链路里立刻播放 s0，避免多次 HEAD 后丢失浏览器播放许可。
   _crPlayReplayChunk(btn, token);
 
   crReplayDiscoverPromise = crDiscoverReplayChunks(msgId).then(chunks => {
