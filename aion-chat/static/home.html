@@ -88,7 +88,7 @@ body[data-theme="dark"] .clock-widget {
 .app-page {
   flex: 0 0 100%;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(var(--home-page-columns, 4), 1fr);
   grid-template-rows: repeat(var(--home-page-rows, 3), 82px);
   gap: 14px 0;
   padding: 16px 16px 8px;
@@ -648,7 +648,7 @@ window.addEventListener('storage', e => {
 const HOME_GRID_ORDER_KEY = 'aion_home_grid_order_v1';
 const HOME_LAYOUT_KEY = 'aion_home_layout_v2';
 const HOME_LAYOUT_SYNC_URL = '/api/home/layout';
-const PAGE_COLUMNS = 4;
+let PAGE_COLUMNS = 4;
 const PAGE_ROW_HEIGHT = 82;
 const PAGE_ROW_GAP = 14;
 const MIN_FREE_PAGES = 3;
@@ -893,6 +893,8 @@ function renderApps() {
   const dock = document.getElementById('dock');
 
   const rows = getRowsPerPage();
+  PAGE_COLUMNS = window.innerWidth >= 900 ? 8 : 4;
+  document.documentElement.style.setProperty('--home-page-columns', PAGE_COLUMNS);
   document.documentElement.style.setProperty('--home-page-rows', rows);
   pageCapacity = PAGE_COLUMNS * rows;
   pageCount = getPageCountForLayout();
