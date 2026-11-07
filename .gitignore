@@ -8,7 +8,11 @@ __pycache__/
 venv/
 *.egg-info/
 
-# ── IDE ──
+# ── 隐私与临时文件 ──
+*交接*.md
+*.bak
+*.bak-*
+
 .vscode/
 .idea/
 
