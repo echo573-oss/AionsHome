@@ -28,6 +28,12 @@
     const filters = state.view === 'atoms' ? [['all','全部'],['active','活跃'],['cold','已归档']] : [['all','全部'],['daily','日常'],['long_term','长期重要'],['friend','朋友记忆'],...(state.view === 'memories' ? [['unresolved','当前未完成']] : [])];
     el('chips').innerHTML = filters.map(([id,label]) => `<button class="chip" data-filter="${id}" aria-pressed="${state.filter === id}">${label}</button>`).join('');
   }
+  function entryText(content) {
+    const text = String(content || '');
+    const anchor = /^(NA-\d{2}｜[^\r\n]+)\r?\n+/.exec(text);
+    if (!anchor) return `<p class="bodytext">${esc(text)}</p>`;
+    return `<strong class="entry-title">${esc(anchor[1])}</strong><p class="bodytext">${esc(text.slice(anchor[0].length))}</p>`;
+  }
   function renderList() {
     el('count').textContent = `${state.total} 条`;
     const pages = Math.max(1, Math.ceil(state.total / state.limit));
@@ -37,7 +43,7 @@
     el('prev').disabled = state.page <= 1;
     el('next').disabled = state.page >= pages;
     el('list').innerHTML = state.items.length ? state.items.map(m => `<article class="entry ${m.id === state.selected ? 'selected' : ''}" data-id="${esc(m.id)}">
-      <button class="entry-open"><div class="entry-head"><time>${esc(day(m.source_start_ts || m.created_at).replaceAll('-','.'))}</time><span class="pill ${m.memory_kind === 'daily' ? 'green' : ''}">${kindLabel(m)}</span><span class="end">${m.unresolved ? '未完成 · ' : ''}${state.view === 'atoms' ? (m.archive_state === 'cold' ? '<span class="pill gray">已归档</span>' : '<i class="dot"></i>活跃') : periodLabel(m)}</span></div><p class="bodytext">${esc(m.content)}</p></button>
+      <button class="entry-open"><div class="entry-head"><time>${esc(day(m.source_start_ts || m.created_at).replaceAll('-','.'))}</time><span class="pill ${m.memory_kind === 'daily' ? 'green' : ''}">${kindLabel(m)}</span><span class="end">${m.unresolved ? '未完成 · ' : ''}${state.view === 'atoms' ? (m.archive_state === 'cold' ? '<span class="pill gray">已归档</span>' : '<i class="dot"></i>活跃') : periodLabel(m)}</span></div>${entryText(m.content)}</button>
       <div class="entry-foot"><span class="entry-keywords" title="${esc(keywords(m.keywords))}">${esc(keywords(m.keywords) || '无关键词')}</span><div class="entry-actions"><button data-action="source">原文</button><button data-action="edit">编辑</button><button class="danger" data-action="delete">删除</button></div></div></article>`).join('') : '<div class="empty">没有找到匹配的记忆<br><small>试试其他关键词，或新增一条记忆</small></div>';
   }
   function refreshBlocked() {

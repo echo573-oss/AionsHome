@@ -5343,8 +5343,44 @@ function autoResize(el) {
   el.style.height = Math.min(el.scrollHeight, 200) + "px";
 }
 
-function openSidebar() { $("sidebar").classList.add("open"); $("overlay").classList.add("show"); }
-function closeSidebar() { $("sidebar").classList.remove("open"); $("overlay").classList.remove("show"); }
+const sidebarMobile = window.matchMedia("(max-width: 768px)");
+let desktopSidebarHidden = localStorage.getItem("aion_desktop_sidebar_hidden") === "1";
+
+function syncSidebarToggle() {
+  document.body.classList.toggle("desktop-sidebar-hidden", !sidebarMobile.matches && desktopSidebarHidden);
+  const expanded = sidebarMobile.matches ? $("sidebar").classList.contains("open") : !desktopSidebarHidden;
+  const label = expanded ? "收起会话列表" : "展开会话列表";
+  const toggle = $("sidebarToggle");
+  toggle.setAttribute("aria-expanded", String(expanded));
+  toggle.setAttribute("aria-label", label);
+  toggle.title = label;
+}
+
+function toggleSidebar() {
+  if (sidebarMobile.matches) {
+    if ($("sidebar").classList.contains("open")) closeSidebar();
+    else openSidebar();
+    return;
+  }
+  desktopSidebarHidden = !desktopSidebarHidden;
+  localStorage.setItem("aion_desktop_sidebar_hidden", desktopSidebarHidden ? "1" : "0");
+  syncSidebarToggle();
+}
+
+function openSidebar() {
+  $("sidebar").classList.add("open");
+  $("overlay").classList.add("show");
+  syncSidebarToggle();
+}
+
+function closeSidebar() {
+  $("sidebar").classList.remove("open");
+  $("overlay").classList.remove("show");
+  syncSidebarToggle();
+}
+
+sidebarMobile.addEventListener("change", closeSidebar);
+syncSidebarToggle();
 
 // ── 设置/世界书/定位 → 已拆分为独立页面 ──
 

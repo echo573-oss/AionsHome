@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#ff8359">
-<link rel="stylesheet" href="/static/chat.css?v=20261106-tts-label">
+<link rel="stylesheet" href="/static/chat.css?v=20261107-sidebar-toggle">
 <link rel="stylesheet" href="/static/ai-message-editor.css?v=20260920">
 <link rel="stylesheet" href="/static/pat.css?v=inline-order-20260910">
 <link rel="stylesheet" href="/static/rps.css?v=20261019-rps-summary">
@@ -21,7 +21,7 @@
 <link rel="stylesheet" href="/static/image-viewer.css?v=20261104-ai-photo">
 <script src="/static/image-viewer.js?v=20261024"></script>
 <link rel="stylesheet" href="/static/local-voice.css?v=20261024">
-<link rel="stylesheet" href="/static/chat-day-glass.css?v=20261102-1">
+<link rel="stylesheet" href="/static/chat-day-glass.css?v=20261107-bubbles-55">
 </head>
 <body data-theme="dark">
 
@@ -151,10 +151,9 @@
   <main class="chat-area">
     <div class="chat-header">
       <button class="home-btn" onclick="openSubPage('/')" title="返回主页">⬅</button>
-      <button class="menu-btn" onclick="openSidebar()">☰</button>
+      <button class="menu-btn" id="sidebarToggle" type="button" onclick="toggleSidebar()" aria-controls="sidebar" aria-expanded="false" aria-label="展开会话列表" title="展开会话列表">☰</button>
       <div class="title" id="chatTitle" onclick="renameCurrent()">Aion Chat</div>
       <div class="tts-toggle" title="自动朗读新回复">
-        <label class="tts-label" for="ttsToggle">朗读</label>
         <label class="toggle-switch">
           <input type="checkbox" id="ttsToggle" aria-label="自动朗读新回复" onchange="toggleTTS()">
           <span class="toggle-slider"></span>
@@ -511,7 +510,7 @@ window.AionSubPageNavigation = (() => {
 <script src="/static/native-message-sync.js?v=20261030-weak-network"></script>
 <link rel="stylesheet" href="/static/kitchen-cards.css?v=20261103-lookup2">
 <script src="/static/kitchen-cards.js?v=20261103-lookup3"></script>
-<script src="/static/chat.js?v=20261106-history-cursor"></script>
+<script src="/static/chat.js?v=20261107-sidebar-toggle"></script>
 <script src="/static/voice-call-policy.js?v=voice-latency-20260902a"></script>
 <script src="/static/voice-call.js?v=voice-latency-20260902a"></script>
 

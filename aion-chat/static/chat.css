@@ -62,7 +62,8 @@ button, input, textarea, select { font-family: inherit; }
 
 .chat-header { padding: 10px 16px; padding-top: calc(10px + env(safe-area-inset-top)); border-bottom: 1px solid rgba(240,228,221,0.45); background: rgba(255,249,245,0.65); backdrop-filter: blur(20px) saturate(1.6); -webkit-backdrop-filter: blur(20px) saturate(1.6); display: flex; align-items: center; gap: 10px; min-height: 48px; position: absolute; top: 0; left: 0; right: 0; z-index: 8; box-shadow: 0 1px 8px rgba(0,0,0,0.06); }
 .chat-header .home-btn { background: none; border: none; color: var(--text); font-size: 20px; cursor: pointer; padding: 4px 6px; flex-shrink: 0; }
-.chat-header .menu-btn { display: none; background: none; border: none; color: var(--text); font-size: 22px; cursor: pointer; padding: 4px; }
+.chat-header .menu-btn { display: flex; background: none; border: none; color: var(--text); font-size: 22px; cursor: pointer; padding: 4px; flex-shrink: 0; }
+body.desktop-sidebar-hidden .app > .sidebar { display: none; }
 .chat-header .title { flex:1; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .chat-header select { background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 12px; outline: none; }
 .config-btn { background:var(--surface2); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:6px 10px; font-size:14px; cursor:pointer; flex-shrink:0; }
@@ -891,7 +892,6 @@ body[data-theme="light"] .link-preview-card:hover {
 
 /* ── TTS 语音开关 ── */
 .tts-toggle { display:flex; align-items:center; gap:6px; flex-shrink:0; }
-.tts-label { font-size:16px; cursor:default; }
 .config-setting-hint { margin: 0 0 6px; font-size: 11px; line-height: 1.4; color: var(--text3); }
 .tts-voice-row { display:flex; align-items:center; gap:8px; margin:6px 0; }
 .tts-voice-row label { font-size:12px; color:var(--text2); white-space:nowrap; min-width:50px; }
@@ -979,6 +979,9 @@ body[data-theme="light"] .link-preview-card:hover {
 
 /* ── 系统日志面板 ── */
 .syslog-modal { width:min(1100px,96vw); max-width:1100px; height:min(92vh,900px); max-height:92vh; display:flex; flex-direction:column; overflow:hidden; }
+@media (orientation: portrait) and (min-height: 950px) {
+  .syslog-modal { height:94vh; max-height:94vh; height:94dvh; max-height:94dvh; }
+}
 .syslog-list { flex:1 1 auto; min-height:0; overflow-y:auto; max-height:none; border:1px solid var(--border); border-radius:8px; background:var(--bg); padding:4px; }
 .syslog-empty { padding:24px; text-align:center; color:var(--text3); font-size:14px; }
 .syslog-entry { padding:8px 10px; border-bottom:1px solid var(--border); font-size:12px; line-height:1.6; }
@@ -1516,7 +1519,6 @@ body[data-theme="light"] .chat-header { background: rgba(248, 251, 255, 0.58); }
   gap: 9px;
   padding: 0 4px;
 }
-.tts-label { font-size: 20px; }
 .toggle-slider {
   background: rgba(35, 42, 100, 0.66);
   border-color: var(--border-strong);
@@ -1818,12 +1820,11 @@ body[data-theme="light"] .plus-menu-item { text-shadow: none; }
   }
   .tts-toggle {
     display: flex;
-    width: 64px;
-    flex: 0 0 64px;
+    width: 36px;
+    flex: 0 0 36px;
     padding: 0;
     justify-content: center;
   }
-  .tts-toggle .tts-label { font-size: 11px; white-space: nowrap; }
   .tts-toggle .toggle-switch { width: 34px; height: 20px; transform: none; }
   .tts-toggle .toggle-slider { border-radius: 999px; }
   .tts-toggle .toggle-slider:before { width: 14px; height: 14px; top: 2px; left: 2px; }
@@ -1908,8 +1909,8 @@ body[data-theme="light"] .plus-menu-item { text-shadow: none; }
   }
   .chat-header .title { font-size: 14px; min-width: 58px; }
   .tts-toggle {
-    width: 60px;
-    flex: 0 0 60px;
+    width: 32px;
+    flex: 0 0 32px;
     padding: 0;
     overflow: hidden;
   }
