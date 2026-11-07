@@ -8,6 +8,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 import sys
 
+# Windows 下输出被重定向到日志文件时默认用 GBK，print() 遇到 Emoji 会直接抛异常，
+# 曾导致 AI 回复在存库前被中断而丢失。这里统一改为 UTF-8，无法编码的字符转义而不报错。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+    except (AttributeError, ValueError):
+        pass
+
 if __name__ == "__main__" and "--scheduled" in sys.argv:
     from scheduled_home import run
     run(Path(__file__).resolve())

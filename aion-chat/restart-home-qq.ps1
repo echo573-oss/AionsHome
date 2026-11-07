@@ -82,13 +82,23 @@ if (-not $StartOnly) {
 if (-not $StartOnly -or -not $targets) {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $errorPath) | Out-Null
     $oldAgyProxy = $env:AION_AGY_PROXY
+    $oldGeminiProxy = $env:AION_GEMINI_PROXY
+    $oldPythonUtf8 = $env:PYTHONUTF8
+    $oldPythonIoEncoding = $env:PYTHONIOENCODING
     try {
-        if (-not $env:AION_AGY_PROXY -and (Get-NetTCPConnection -LocalPort 7897 -State Listen -ErrorAction SilentlyContinue)) {
-            $env:AION_AGY_PROXY = 'http://127.0.0.1:7897'
+        $env:PYTHONUTF8 = '1'
+        $env:PYTHONIOENCODING = 'utf-8:backslashreplace'
+        if ((-not $env:AION_AGY_PROXY -or -not $env:AION_GEMINI_PROXY) -and
+            (Get-NetTCPConnection -LocalPort 7897 -State Listen -ErrorAction SilentlyContinue)) {
+            if (-not $env:AION_AGY_PROXY) { $env:AION_AGY_PROXY = 'http://127.0.0.1:7897' }
+            if (-not $env:AION_GEMINI_PROXY) { $env:AION_GEMINI_PROXY = 'http://127.0.0.1:7897' }
         }
         $started = Start-Process -FilePath $pythonPath -ArgumentList '-u','main.py' -WorkingDirectory $serverPath -WindowStyle Hidden -RedirectStandardOutput $outputPath -RedirectStandardError $errorPath -PassThru
     } finally {
         $env:AION_AGY_PROXY = $oldAgyProxy
+        $env:AION_GEMINI_PROXY = $oldGeminiProxy
+        $env:PYTHONUTF8 = $oldPythonUtf8
+        $env:PYTHONIOENCODING = $oldPythonIoEncoding
     }
 }
 

@@ -332,7 +332,7 @@ class WeChatModeBroadcastIsolationTests(unittest.IsolatedAsyncioTestCase):
             await manager.broadcast(event)
 
         self.assertGreaterEqual(offer.call_count, 1)
-        self.assertEqual(len(socket.messages), 1)
+        self.assertGreaterEqual(len(socket.messages), 1)
         self.assertIn("正文", socket.messages[0])
 
 

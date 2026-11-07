@@ -3,7 +3,7 @@
 """
 
 from reply_timing import timed
-import json, time, struct, math, asyncio, re
+import json, time, struct, math, asyncio, re, os
 from datetime import datetime, timedelta
 
 import aiosqlite, httpx
@@ -198,23 +198,28 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
-_embedding_client: httpx.AsyncClient | None = None
+_embedding_clients: dict[str | None, httpx.AsyncClient] = {}
 
 
-def _get_embedding_client() -> httpx.AsyncClient:
-    global _embedding_client
-    if _embedding_client is None or _embedding_client.is_closed:
+def _native_gemini_proxy() -> str | None:
+    return os.environ.get("AION_GEMINI_PROXY", "").strip() or None
+
+
+def _get_embedding_client(proxy: str | None = None) -> httpx.AsyncClient:
+    client = _embedding_clients.get(proxy)
+    if client is None or client.is_closed:
         # 在应用事件循环内按需创建；认证和模型仍逐次从配置读取。
-        _embedding_client = httpx.AsyncClient(
-            timeout=30, limits=httpx.Limits(keepalive_expiry=60),
+        client = httpx.AsyncClient(
+            timeout=30, limits=httpx.Limits(keepalive_expiry=60), proxy=proxy,
         )
-    return _embedding_client
+        _embedding_clients[proxy] = client
+    return client
 
 
 async def close_embedding_client() -> None:
-    global _embedding_client
-    client, _embedding_client = _embedding_client, None
-    if client is not None:
+    clients = tuple(_embedding_clients.values())
+    _embedding_clients.clear()
+    for client in clients:
         await client.aclose()
 
 
@@ -246,7 +251,7 @@ async def get_embedding(text: str, *, timeout: float | None = None) -> list[floa
         body = {"content": {"parts": [{"text": text}]}}
         try:
             async with asyncio.timeout(timeout):
-                resp = await _get_embedding_client().post(url, json=body)
+                resp = await _get_embedding_client(_native_gemini_proxy()).post(url, json=body)
             resp.raise_for_status()
             return resp.json()["embedding"]["values"]
         except Exception:
@@ -589,7 +594,7 @@ async def _call_sentinel_text(scfg: dict, prompt: str, timeout: int = 60) -> str
             {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
             {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
         ]
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=timeout, proxy=_native_gemini_proxy()) as client:
             resp = await client.post(url, json={"contents": contents, "safetySettings": safety_settings})
             resp.raise_for_status()
             data = resp.json()
@@ -641,7 +646,7 @@ async def _call_sentinel_vision(scfg: dict, prompt: str, img_b64: str, mime_type
             {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
             {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
         ]
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=timeout, proxy=_native_gemini_proxy()) as client:
             resp = await client.post(url, json={"contents": contents, "safetySettings": safety_settings})
             resp.raise_for_status()
             data = resp.json()

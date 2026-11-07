@@ -452,6 +452,38 @@ async def _save_stopped_chat_reply(conv_id, msg_id, visible_text, result, queue)
     await manager.broadcast({"type": "msg_created", "data": message})
 
 
+
+async def _save_reply_after_postprocess_error(conv_id, msg_id, text, reasoning=""):
+    """后处理某一步出错时，兜底保存已生成的正文，避免整条回复丢失。
+
+    指令（记忆、日程等）可能已部分执行；这里只保证正文落库，不重放任何指令。
+    """
+    try:
+        content = _visible_ai_text(text)
+    except Exception:
+        content = (text or "").strip()
+    if not content:
+        return False
+    now = time.time()
+    async with get_db() as db:
+        cur = await db.execute("SELECT 1 FROM messages WHERE id=?", (msg_id,))
+        if await cur.fetchone():
+            return False
+        await db.execute(
+            "INSERT INTO messages (id, conv_id, role, content, created_at, attachments, reasoning_content) VALUES (?,?,?,?,?,?,?)",
+            (msg_id, conv_id, "assistant", content, now, "", reasoning or ""),
+        )
+        await db.execute("UPDATE conversations SET updated_at=? WHERE id=?", (now, conv_id))
+        await db.commit()
+    message = {"id": msg_id, "conv_id": conv_id, "role": "assistant", "content": content,
+               "created_at": now, "attachments": [], "reasoning_content": reasoning or ""}
+    await manager.broadcast({"type": "msg_created", "data": message})
+    try:
+        await export_conversation(conv_id)
+    except Exception:
+        pass
+    return True
+
 _AI_ERROR_PREFIXES = (
     "[CodexCLI错误",
     "[Gemini错误",
@@ -1183,12 +1215,29 @@ async def delete_conversation(conv_id: str):
     return {"ok": True}
 
 # ── 消息 CRUD ─────────────────────────────────────
+def _uses_archive_message_order(conv_id: str) -> bool:
+    """部分原档的时间会倒序，保留时间戳，同时按导入的原始顺序展示。"""
+    return conv_id.startswith("conv_lan_ordered_raw_")
+
+
 @router.get("/api/conversations/{conv_id}/messages")
 async def list_messages(conv_id: str, limit: int = Query(50, ge=1, le=500), before: Optional[float] = Query(None), before_id: Optional[str] = Query(None)):
     """获取消息。分页时可同时传入时间戳和上一页最早的消息 ID。"""
     async with get_db() as db:
         db.row_factory = __import__('aiosqlite').Row
-        if before is not None and before_id:
+        if _uses_archive_message_order(conv_id) and before_id:
+            cur = await db.execute(
+                "SELECT * FROM messages WHERE conv_id=? AND rowid<"
+                "COALESCE((SELECT rowid FROM messages WHERE conv_id=? AND id=?),0) "
+                "ORDER BY rowid DESC LIMIT ?",
+                (conv_id, conv_id, before_id, limit),
+            )
+        elif _uses_archive_message_order(conv_id) and before is None:
+            cur = await db.execute(
+                "SELECT * FROM messages WHERE conv_id=? ORDER BY rowid DESC LIMIT ?",
+                (conv_id, limit),
+            )
+        elif before is not None and before_id:
             cur = await db.execute(
                 "SELECT * FROM messages WHERE conv_id=? AND (created_at,rowid)<"
                 "(?,COALESCE((SELECT rowid FROM messages WHERE conv_id=? AND id=? AND created_at=?),0)) "
@@ -1334,16 +1383,22 @@ async def messages_around(conv_id: str, msg_id: str, limit: int = Query(25, ge=1
         target = await cur.fetchone()
         if not target:
             return []
-        cursor = (target["created_at"], target["sequence"])
+        # 排序表达式只从固定分支选择，不使用客户端输入拼接 SQL。
+        archive_order = _uses_archive_message_order(conv_id)
+        order = "rowid" if archive_order else "(created_at,rowid)"
+        placeholders = "?" if archive_order else "(?,?)"
+        cursor = (target["sequence"],) if archive_order else (target["created_at"], target["sequence"])
+        descending = "rowid DESC" if archive_order else "created_at DESC,rowid DESC"
+        ascending = "rowid ASC" if archive_order else "created_at ASC,rowid ASC"
         # 取目标消息之前（含自身）的 limit 条
         cur_before = await db.execute(
-            "SELECT * FROM messages WHERE conv_id=? AND (created_at,rowid)<=(?,?) ORDER BY created_at DESC,rowid DESC LIMIT ?",
+            f"SELECT * FROM messages WHERE conv_id=? AND {order}<={placeholders} ORDER BY {descending} LIMIT ?",
             (conv_id, *cursor, limit)
         )
         before = list(reversed(await cur_before.fetchall()))
         # 取目标消息之后的 limit 条
         cur_after = await db.execute(
-            "SELECT * FROM messages WHERE conv_id=? AND (created_at,rowid)>(?,?) ORDER BY created_at ASC,rowid ASC LIMIT ?",
+            f"SELECT * FROM messages WHERE conv_id=? AND {order}>{placeholders} ORDER BY {ascending} LIMIT ?",
             (conv_id, *cursor, limit)
         )
         after = await cur_after.fetchall()
@@ -1929,6 +1984,14 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
         except Exception:
             import traceback
             traceback.print_exc()
+            # 后处理任一步出错都不能让已生成的回复丢失
+            try:
+                await _save_reply_after_postprocess_error(
+                    conv_id, ai_msg_id, full_text,
+                    (usage_meta.get("reasoning_content") or "").strip(),
+                )
+            except Exception:
+                traceback.print_exc()
         finally:
             if active_generations.get(conv_id) is cancel_event:
                 active_generations.pop(conv_id, None)
@@ -2686,6 +2749,14 @@ async def send_message(conv_id: str, body: MsgCreate):
         except Exception:
             import traceback
             traceback.print_exc()
+            # 后处理任一步出错都不能让已生成的回复丢失
+            try:
+                await _save_reply_after_postprocess_error(
+                    conv_id, ai_msg_id, full_text,
+                    (usage_meta.get("reasoning_content") or "").strip(),
+                )
+            except Exception:
+                traceback.print_exc()
         finally:
             if active_generations.get(conv_id) is cancel_event:
                 active_generations.pop(conv_id, None)
@@ -4135,6 +4206,14 @@ async def regenerate_message(conv_id: str, context_limit: int = 30, whisper_mode
         except Exception:
             import traceback
             traceback.print_exc()
+            # 后处理任一步出错都不能让已生成的回复丢失
+            try:
+                await _save_reply_after_postprocess_error(
+                    conv_id, ai_msg_id, full_text,
+                    (usage_meta.get("reasoning_content") or "").strip(),
+                )
+            except Exception:
+                traceback.print_exc()
         finally:
             if active_generations.get(conv_id) is cancel_event:
                 active_generations.pop(conv_id, None)
