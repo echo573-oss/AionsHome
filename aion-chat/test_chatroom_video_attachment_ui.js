@@ -19,6 +19,7 @@ const renderAttachmentsSource = script.slice(
 const attachmentContext = {
   esc: value => String(value),
   imageInteractionAttrs: () => '',
+  window: {},
 };
 vm.runInNewContext(renderAttachmentsSource, attachmentContext);
 const messageHtml = attachmentContext.renderAttachments(['/cr-uploads/2026-08-22/latest.mp4']);

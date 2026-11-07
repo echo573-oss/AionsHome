@@ -6,7 +6,7 @@ const { chromium } = require('playwright');
 
 let browser, page;
 before(async () => {
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({ headless: true, channel: 'chrome' });
   page = await browser.newPage();
   await page.route('http://image-upload.test/', route => route.fulfill({ body: '<html></html>', contentType: 'text/html' }));
   await page.goto('http://image-upload.test/');

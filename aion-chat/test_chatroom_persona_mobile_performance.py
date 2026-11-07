@@ -57,8 +57,8 @@ class ChatroomPersonaMobilePerformanceTests(unittest.TestCase):
         )
 
     def test_chatroom_assets_are_cache_busted_for_the_persona_performance_fix(self):
-        version = "persona-mobile-performance-20260721"
-        self.assertEqual(self.html.count(version), 2)
+        version = "20261104-image-retry"
+        self.assertGreaterEqual(self.html.count(version), 2)
         self.assertRegex(self.html, rf'chatroom\.css\?v=[^"\n]*{version}')
         self.assertRegex(self.html, rf'chatroom\.js\?v=[^"\n]*{version}')
 

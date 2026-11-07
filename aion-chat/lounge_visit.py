@@ -201,7 +201,7 @@ class LoungeVisitCoordinator:
                 cancel_deadline = (
                     asyncio.get_running_loop().time() + _TOTAL_TIMEOUT_SECONDS
                 )
-                async with asyncio.timeout(_TOTAL_TIMEOUT_SECONDS):
+                async with asyncio.timeout(_TOTAL_TIMEOUT_SECONDS) as timeout_ctx:
                     return await self._run_locked(
                         actor_id,
                         friend_id,
@@ -209,7 +209,7 @@ class LoungeVisitCoordinator:
                         topic,
                         compose_next,
                         progress,
-                        cancel_deadline,
+                        timeout_ctx,
                     )
             except TimeoutError:
                 return await self._finish_without_details(
@@ -228,7 +228,7 @@ class LoungeVisitCoordinator:
         topic: str,
         compose_next: ComposeNextMessage,
         progress: dict[str, object],
-        cancel_deadline: float,
+        timeout_ctx: asyncio.Timeout,
     ) -> LoungeVisitResult:
         try:
             friend = self.friend_store.get_owned(actor_id, friend_id)
@@ -429,7 +429,7 @@ class LoungeVisitCoordinator:
             status = "interrupted"
             reason = (
                 "request_timeout"
-                if asyncio.get_running_loop().time() >= cancel_deadline
+                if timeout_ctx.expired()
                 else "user_cancelled"
             )
         except _VisitStopped as stopped:

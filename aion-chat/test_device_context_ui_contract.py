@@ -6,8 +6,8 @@ class DeviceContextUiContractTest(unittest.TestCase):
     def test_activity_page_contains_context_panels_and_status_endpoint(self):
         html = Path("static/activity-logs.html").read_text(encoding="utf-8")
         for marker in (
-            "contextPrimary",
-            "contextDevices",
+            "contextPc",
+            "contextPhone",
             "contextNotifications",
             "contextPrompt",
         ):

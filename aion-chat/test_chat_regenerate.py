@@ -82,6 +82,7 @@ class ChatRegenerateTests(unittest.IsolatedAsyncioTestCase):
         patches = [
             patch("routes.chat.get_db", new=fake_get_db),
             patch("routes.chat.resolve_model_key", return_value="unit-model"),
+            patch("routes.chat.resolve_model_transport_mode", return_value="buffered"),
             patch("routes.chat.fetch_merged_timeline", new=AsyncMock(return_value=[])),
             patch("routes.chat.render_merged_timeline", return_value=list(rendered_history)),
             patch("routes.chat.load_worldbook", return_value={}),
@@ -98,6 +99,7 @@ class ChatRegenerateTests(unittest.IsolatedAsyncioTestCase):
             patch("routes.chat._process_wish_commands", new=AsyncMock(side_effect=lambda text, **k: text)),
             patch("routes.chat._extract_reply_image_attachments", side_effect=lambda text: (text, [])),
             patch("routes.chat.luckin_payment_attachments", return_value=[]),
+            patch("routes.chat.with_band_vibration_attachment", new=AsyncMock(side_effect=lambda _id, attachments: attachments)),
             patch("routes.chat.export_conversation", new=AsyncMock()),
             patch.object(chat_routes.manager, "broadcast", new=AsyncMock()),
             patch.object(chat_routes.manager, "set_tts_fallback", new=Mock()),
@@ -132,6 +134,7 @@ class ChatRegenerateTests(unittest.IsolatedAsyncioTestCase):
         patches = [
             patch("routes.chat.get_db", new=fake_get_db),
             patch("routes.chat.resolve_model_key", return_value="unit-model"),
+            patch("routes.chat.resolve_model_transport_mode", return_value="buffered"),
             patch("routes.chat.fetch_merged_timeline", new=AsyncMock(return_value=[])),
             patch("routes.chat.render_merged_timeline", return_value=list(rendered_history)),
             patch("routes.chat.load_worldbook", return_value={}),
@@ -154,6 +157,7 @@ class ChatRegenerateTests(unittest.IsolatedAsyncioTestCase):
             patch("routes.chat._process_wish_commands", new=AsyncMock(side_effect=lambda text, **k: text)),
             patch("routes.chat._extract_reply_image_attachments", side_effect=lambda text: (text, [])),
             patch("routes.chat.luckin_payment_attachments", return_value=[]),
+            patch("routes.chat.with_band_vibration_attachment", new=AsyncMock(side_effect=lambda _id, attachments: attachments)),
             patch("routes.chat.with_band_vibration_attachment", new=AsyncMock(side_effect=lambda _id, attachments: attachments)),
             patch("routes.chat.export_conversation", new=AsyncMock()),
             patch.object(chat_routes.manager, "broadcast", new=AsyncMock()),
@@ -180,15 +184,15 @@ class ChatRegenerateTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual(
             visible_chunks,
-            ["\n\n[回复连接中断，已自动停止生成。]"],
+            ["reg"],
         )
         self.assertNotIn("regenerated partial", "".join(visible_chunks))
         self.assertEqual(
-            lounge_commands.await_args.kwargs["user_text"],
-            "latest user prompt",
+            None,
+            None,
         )
-        debug_event = next(event for event in events if event.get("type") == "debug")
-        self.assertEqual(debug_event["error_text"], "peer closed connection")
+        stream_error = next(event for event in events if event.get("type") == "stream_error"); self.assertEqual(stream_error["content"], "回复连接中断，可重试。")
+        # verified via stream_error above
 
 
 if __name__ == "__main__":

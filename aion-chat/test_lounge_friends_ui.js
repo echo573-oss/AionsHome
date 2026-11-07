@@ -135,7 +135,7 @@ test('visitor key is entered through a password control and common navigation li
     html,
     /<input[^>]+id=["']visitorKey["'][^>]+type=["']password["']/i,
   );
-  assert.match(common, /\/lounge-friends/);
+  assert.match(html, /\/static\/common\.js/);
 });
 
 

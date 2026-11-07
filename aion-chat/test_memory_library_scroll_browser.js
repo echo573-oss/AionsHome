@@ -4,7 +4,7 @@ const path = require('node:path');
 const {chromium} = require('playwright');
 
 test('editing and deleting memories keeps the place in the list', async () => {
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({channel: 'chrome'});
   try {
     const page = await browser.newPage({viewport:{width:390,height:720}});
     const rows = Array.from({length:43}, (_, i) => ({

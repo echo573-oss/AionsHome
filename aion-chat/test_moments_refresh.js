@@ -46,7 +46,7 @@ test('snapshot reconciliation runs on connection and foreground instead of repla
     document: { visibilityState: 'visible', addEventListener: (name, fn) => { events[name] = fn; } },
     reconcileCommonSync() { replays++; },
   });
-  vm.runInContext(block(common, 'function connectCommonWS', '/* ── 闹铃弹窗'), ctx);
+  vm.runInContext('const _securityAlertUi = Promise.resolve(null);\n' + block(common, 'function connectCommonWS', 'const _homePopups'), ctx);
   ctx.connectCommonWS(() => {}, { reconcile: () => { refreshes++; } });
   vm.runInContext('_commonWs.onopen()', ctx);
   events.visibilitychange();

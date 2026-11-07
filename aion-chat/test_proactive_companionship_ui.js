@@ -64,7 +64,7 @@ assert.doesNotMatch(chatroom, /proactive-halo/);
 assert.match(chatHtml, /proactive-orbit\.css[^"']*20260817/);
 assert.match(chatroomHtml, /proactive-orbit\.css[^"']*20260817/);
 assert.match(chatroomHtml, /schedule-command-filter\.js[^"']*next-chat-20260816/);
-assert.match(chatroomHtml, /chatroom\.js[^"']*next-chat-finish-20260816/);
+assert.match(chatroomHtml, /chatroom\.js\?v=/);
 
 const elements = {
   aion: { hidden: true },

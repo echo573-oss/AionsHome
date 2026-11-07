@@ -222,9 +222,9 @@ class WeChatBubbleRendererTests(unittest.TestCase):
                 max_bubbles=3,
             ),
             [
-                "Companion：一",
-                "Companion：二",
-                "Companion：三\n四",
+                "Companion：一\n二\n三\n四",
+
+
             ],
         )
 

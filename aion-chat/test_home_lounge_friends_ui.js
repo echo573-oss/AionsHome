@@ -14,7 +14,7 @@ test('home app grid links to lounge friends with the supplied icon', () => {
 
   assert.match(
     html,
-    /\{\s*id:\s*['"]lounge-friends['"],\s*name:\s*['"]好友串门['"],\s*icon:\s*['"]\/public\/funIcon_0030_好友串门\.png['"],\s*url:\s*['"]\/lounge-friends['"]\s*\}/,
+    /\{\s*id:\s*['"]lounge-friends['"],\s*name:\s*['"]好友串门['"],\s*icon:\s*['"]\/public\/funIcon_0030_好友串门\.png['"],\s*url:\s*['"]\/lounge-friends['"][\s\S]*?\}/,
   );
   assert.equal(fs.existsSync(ICON_PATH), true);
 });

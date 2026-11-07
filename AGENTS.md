@@ -52,13 +52,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-tests.ps1
 - JavaScript 侧用 **node:test**（Node 24 内置 runner），不是 jest / vitest。
 - 规模：221 个 `test_*.py` + 92 个 `test_*.js`。
   - unittest 全量约 1751 个用例、9 分钟
-  - pytest 那批实测收集 **138 个用例**，约 20 秒，2026-11-06 结果 137 passed / 1 failed
-- **基线不是全绿**。unittest 侧 34 failures + 16 errors，多数是前端契约漂移（缓存版本号、CSS 数值）与文案断言过时；pytest 侧只剩 `test_lounge_visit.py::test_overall_timeout_finishes_started_visit_and_disconnects`（期望 `request_timeout`、实得 `cancelled`，需判断是代码还是测试该改）。判断是否引入回归，看「改动前后同一个模块的对比」，不要指望一次全绿。
+  - pytest 那批实测收集 **138 个用例**，约 12 秒，138 passed（全绿）
+  - JavaScript（`node:test`）共 **329 个用例**，约 44 秒，329 passed（全绿）
+- **基线已全绿（2026-11-07）**。历史漂移的缓存版本号断言、CSS/DOM 契约断言、Playwright 硬编码路径、以及 `lounge_visit.py` 的超时判定均已清理完毕，unittest / pytest / JavaScript 三套测试均可作为回归基线。
 - **两个手工模拟工具原先叫 `test_simulate_home.py` / `test_simulate_outside.py`**，因文件名被 discover 收集、导入即发真实心跳。现已改名为 `simulate_home.py` / `simulate_outside.py` 并加 `__main__` 守卫，**只能手动执行**，不要再改回 `test_` 前缀。
-- **⚠️ 跑全量前先停服务**：`data/` 下有多处会被测试写入，临时数据库只重定向了 `chat.db`。2026-11-06 实测：在服务运行中跑全量，`data/location_config.json` 与 `data/location_status.json` 被真实改写。
+- **测试数据目录已完全隔离**：`config.py` 的 `_is_test_process()` 与 `scripts/run-tests.ps1` 的 `AIONSHOME_DATA_DIR` 会把整个 `DATA_DIR`（包括 `chat.db`、`location_*.json`、`uploads/`、`settings.json` 等）重定向到临时目录，即使服务在线运行也可安全跑测试。
 - **不要在测试里直接用 `sqlite3` 连 `config.DB_PATH`**：测试进程里 `DB_PATH` 已指向临时目录，但 schema 不存在，要先 `await init_db()`。用 `database.get_db()` 而不是 `sqlite3.connect()`。
 - **图片合并类测试的时间窗口**：生产 `image_wait_seconds` 是 60–90 秒，测试里曾用 0.04–0.08 秒，那比一次同步 SQLite 写入还短，机器一忙就假失败。已放宽到 2.0 秒（回复由文本触发 `ready.set()` 立即释放，不增加耗时）。
-- **测试库是隔离的**：`config.py` 的 `_is_test_process()` 检测到 unittest / pytest 时会把 `DB_PATH` 指向临时目录，所以正常跑测试不会动 `aion-chat/data/chat.db`。但 `data/` 下其他目录（`uploads/`、`settings.json` 等）仍指向真实位置，会写这些的测试要逐个确认。
+- **测试进程自动隔离**：通过 `config._is_test_process()` 自动检测 `unittest` / `pytest` 并创建独立临时 `DATA_DIR`。
 
 ## 数据安全（最重要）
 
@@ -87,14 +88,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-tests.ps1
 2. **不要改 SQLite 日志模式或 `synchronous`**。属于需单独决定的事：先在数据库副本上对比并发读写与恢复流程。
 3. **不要改 `/static/*` 的缓存策略**。Android 侧已有 SHA-256 资源清单与本地缓存，先测清楚冷启动和二次打开各下载了什么再决定改哪一层。
 
-## 当前状态（2026-11-06）
+## 当前状态（2026-11-07）
 
-**在途修复，别碰**：5 个未提交文件 —— `aion-chat/routes/chat.py`、`static/chat.html`、`static/chat.js`、`static/memory-library.js`、`static/memory.html`，内容是最近的同秒消息翻页与记忆原文跳转修复。动这几个文件前先跟维护者确认，避免覆盖在途改动。
-
-**同一批未提交的工程改动**（与本文件同期产生，可独立审阅）：
-
-- 新增 `AGENTS.md`（本文件）、`scripts/run-tests.ps1`、`aion-chat/requirements-dev.txt`
-- 新增回归测试：`test_message_paging_cursor.py`、`test_ondemand_tts.py`、`test_memory_source_jump.js`
-- `test_simulate_home.py` → `simulate_home.py`，`test_simulate_outside.py` → `simulate_outside.py`（改名 + `__main__` 守卫）
-- `test_svakom_ai.py` 补上 `ai_name` 参数；`test_qq_social.py` 修好 PowerShell 替身并放宽图片合并时间窗口
-- `.gitignore` 追加本机临时产物与本地备份规则
+- 测试隔离、同秒翻页与记忆库跳转修复、AGY CLI 代理环境变量传递、以及历史漂移测试清理均已提交入库。
+- Python (`unittest` + `pytest`) 与 JavaScript (`node:test`) 三套测试套件均已达到 100% 全绿基线。

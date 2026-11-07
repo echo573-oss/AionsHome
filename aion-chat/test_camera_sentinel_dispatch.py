@@ -92,7 +92,7 @@ class SentinelDispatchTests(unittest.TestCase):
         self.assertIn("both", policy)
         self.assertNotIn("aion", policy.lower())
         self.assertNotIn("connor", policy.lower())
-        self.assertIn("转账", policy)
+        self.assertIn("饮食出行", policy)
         self.assertIn("明显危险", policy)
         self.assertIn("普通的不确定", policy)
         self.assertIn("不能", policy)

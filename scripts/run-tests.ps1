@@ -141,6 +141,14 @@ function Invoke-JsSuite {
         return 0
     }
 
+    $pwNodeModules = Join-Path $HOME '.cache\codex-runtimes\codex-primary-runtime\dependencies\node\node_modules'
+    if (Test-Path -LiteralPath $pwNodeModules) {
+        $env:NODE_PATH = if ($env:NODE_PATH) { "$pwNodeModules;$env:NODE_PATH" } else { $pwNodeModules }
+        if (-not $env:PLAYWRIGHT_PATH) {
+            $env:PLAYWRIGHT_PATH = Join-Path $pwNodeModules 'playwright'
+        }
+    }
+
     $arguments = @('--test')
     $arguments += $files
 

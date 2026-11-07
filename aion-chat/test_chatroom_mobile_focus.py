@@ -15,7 +15,7 @@ class ChatroomMobileFocusTests(unittest.TestCase):
         self.assertIn("matchMedia('(pointer: coarse)')", js)
         self.assertIn("navigator.maxTouchPoints", js)
         self.assertIn("function crRefocusComposerAfterSend()", js)
-        self.assertIn("chatroom-mobile-focus-20260704", html)
+        self.assertIn("chatroom.js?v=20261104-image-retry", html)
 
         voice_call_send = re.search(
             r"window\.ChatroomVoiceCallAdapter = \{.*?async sendText\(text\).*?\n  \}\n\};",
@@ -35,7 +35,7 @@ class ChatroomMobileFocusTests(unittest.TestCase):
         self.assertNotIn("inputEl.focus();", composer_submit.group(0))
         self.assertIn("crRefocusComposerAfterSend();", composer_submit.group(0))
 
-        voice_send = re.search(r"async function _crVoiceSend\(audioBlob, duration\).*?\n\}", js, re.S)
+        voice_send = re.search(r"async function _crVoiceSend\([^)]*\).*?\n\}", js, re.S)
         self.assertIsNotNone(voice_send)
         self.assertNotIn("inputEl.focus();", voice_send.group(0))
         self.assertIn("crRefocusComposerAfterSend();", voice_send.group(0))

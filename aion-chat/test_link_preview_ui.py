@@ -23,7 +23,7 @@ class LinkPreviewUiTests(unittest.TestCase):
         self.assertIn("--user-link-preview-offset", css)
         self.assertIn("margin-right:var(--user-link-preview-offset)", css)
         self.assertNotIn("padding-right:var(--user-link-preview-offset)", css)
-        self.assertIn("chat.css?v=link-preview-align-20260706", html)
+        self.assertIn("chat.css?v=20261106-tts-label", html)
 
     def test_chatroom_renders_clickable_link_preview_cards(self):
         js = (ROOT / "static" / "chatroom.js").read_text(encoding="utf-8")
@@ -40,13 +40,13 @@ class LinkPreviewUiTests(unittest.TestCase):
         self.assertIn(".message-row:not(.user) .msg-media", css)
         self.assertIn("align-self: flex-start", css)
         self.assertIn("--user-link-preview-offset", css)
-        self.assertIn("--chatroom-message-avatar-size: 28px", css)
+        self.assertIn("--chatroom-message-avatar-size: 21px", css)
         self.assertIn("--chatroom-message-avatar-gap: 6px", css)
         self.assertIn("--user-link-preview-offset: calc(var(--chatroom-message-avatar-size) + var(--chatroom-message-avatar-gap))", css)
         self.assertIn("gap: var(--chatroom-message-avatar-gap)", css)
         self.assertIn("width: var(--chatroom-message-avatar-size)", css)
-        self.assertIn("margin-right: var(--user-link-preview-offset)", css)
-        self.assertIn("chatroom.css?v=system-event-mobile-width-20260706b", html)
+        self.assertIn("margin-left: auto", css)
+        self.assertIn("chatroom.css?v=20261104-image-retry-small", html)
 
 
 if __name__ == "__main__":

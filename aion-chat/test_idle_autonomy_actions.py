@@ -7,6 +7,9 @@ from unittest.mock import AsyncMock, patch
 
 
 ROOT = Path(__file__).resolve().parent
+_VL_SRC = str(ROOT.parent / "AionsHome-Visitor-Lounge" / "src")
+if _VL_SRC not in sys.path:
+    sys.path.insert(0, _VL_SRC)
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -393,6 +396,7 @@ class IdleAutonomyFriendVisitSelectionTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(autonomy, "get_actor_config", new=AsyncMock(return_value={
             "actions": {"friend_visit": True, "home_dynamics": True},
         })), \
+             patch("visitor_lounge.home_board.live_chat_enabled", return_value=True), \
              patch.object(autonomy, "eligible_lounge_friends", return_value=[object()], create=True), \
              patch.object(autonomy, "_ask_actor_json", new=fake_ask):
             selected = await autonomy._select_action("aion", manual=False)

@@ -169,10 +169,10 @@ class ChatroomFrontendSystemDisplayTests(unittest.TestCase):
         system_notice = self._css_block(mobile, ".system-event-msg")
         self.assertIn("box-sizing: border-box;", system_notice)
         self.assertIn("align-self: flex-start;", system_notice)
-        self.assertIn("width: calc(100% - var(--system-notice-left-offset));", system_notice)
-        self.assertIn("max-width: calc(100% - var(--system-notice-left-offset));", system_notice)
-        self.assertIn("margin-left: var(--system-notice-left-offset);", system_notice)
-        self.assertIn("padding: 6px 4px;", system_notice)
+        self.assertIn("width: 100%;", system_notice)
+        self.assertIn("max-width: 100%;", system_notice)
+        self.assertIn("margin-left: 0;", system_notice)
+        self.assertIn("padding: 0 4px 0 0;", system_notice)
 
     def test_desktop_system_notices_align_with_ai_bubble_edge(self):
         css = (ROOT / "static" / "chatroom.css").read_text(encoding="utf-8")
@@ -180,8 +180,8 @@ class ChatroomFrontendSystemDisplayTests(unittest.TestCase):
         system_notice = self._css_block(css, "\n.system-event-msg {\n")
 
         self.assertIn("box-sizing: border-box;", system_notice)
-        self.assertIn("width: min(85%, calc(100% - var(--system-notice-left-offset) - 8px));", system_notice)
-        self.assertIn("margin-left: var(--system-notice-left-offset);", system_notice)
+        self.assertIn("width: min(85%, 100%);", system_notice)
+        self.assertIn("margin-left: 0;", system_notice)
         self.assertIn("flex: 1;", css)
         self.assertIn("position: absolute;", css)
         self.assertIn("overflow-wrap: anywhere;", css)

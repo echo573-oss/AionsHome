@@ -351,7 +351,7 @@ class KitchenTests(KitchenFixture):
         await self.k.delete_item(item['id'])
         await self.apply('private:deleted', [{'op':'add','name':'鱼丸','amount':1,'unit':'袋'}], source_ts=sent)
         self.assertEqual((await self.k.snapshot())['items'], [])
-        item = await self.k.upsert_item({'name':'虾滑','amount':1,'unit':'盒'})
+        item = await self.k.upsert_item({'name':'虾滑','amount':1,'unit':'盒'}); time.sleep(0.002)
         sent = time.time()
         await self.k.upsert_item({**item, 'name':'鲜虾滑','amount':2})
         await self.apply('private:renamed', [{'op':'set','name':'虾滑','amount':1,'unit':'盒'}], source_ts=sent)

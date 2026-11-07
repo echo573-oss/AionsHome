@@ -5,7 +5,7 @@ const path = require('node:path');
 const {chromium} = require(process.env.PLAYWRIGHT_PATH || 'playwright');
 
 (async () => {
-  const browser = await chromium.launch({headless: true});
+  const browser = await chromium.launch({headless: true, channel: 'chrome'});
   try {
     const page = await browser.newPage({viewport: {width: 390, height: 844}});
     const errors = [], writes = [];

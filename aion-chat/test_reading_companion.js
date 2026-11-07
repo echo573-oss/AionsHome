@@ -2,10 +2,10 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {chromium} = require(process.env.PLAYWRIGHT_PATH || 'C:/Users/32816/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const {chromium} = require(process.env.PLAYWRIGHT_PATH || 'playwright');
 
 (async () => {
-  const browser = await chromium.launch({headless:true});
+  const browser = await chromium.launch({headless:true, channel:'chrome'});
   try {
     const context = await browser.newContext({viewport:{width:390,height:844}});
     await context.addInitScript(() => { window.WebSocket = class { static OPEN=1; readyState=1; send(){} close(){} addEventListener(){} }; });

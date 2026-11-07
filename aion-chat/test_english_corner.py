@@ -352,13 +352,13 @@ class EnglishCornerGenerationTests(unittest.IsolatedAsyncioTestCase):
             "亲密互动",
             "三张卡片使用不同的趣味机制",
             "禁止写成英语教材",
-            "禁止把三个人写成互相客套的陌生人",
+            "互相礼貌寒暄",
             "各自独立",
             "灵感",
             "自由改编",
             "零上下文",
-            "不是真实记忆",
-            "不得写回",
+            "自由创作",
+            "不要机械复述",
             "稳定 speaker ID",
         ):
             with self.subTest(fragment=fragment):
@@ -3158,14 +3158,14 @@ class EnglishCornerCapabilityTests(unittest.IsolatedAsyncioTestCase):
             "Dynamic Learner",
             "明确提醒任务",
             "主动提醒",
-            "不必等",
-            "一直跳过",
+            "表达无聊",
+            "不要一直说教",
             "不要每轮重复",
             "哄",
             "轻微激将",
             "陪学",
-            "不要创建日程或闹铃",
-            "不要触发空闲自主消息",
+            "不要说教、羞辱或制造焦虑",
+            "近期对话",
         ):
             self.assertIn(fragment, reminder)
         for personal_literal in ("Aion", "Ithil", "Connor"):

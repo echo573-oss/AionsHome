@@ -6,7 +6,7 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 
 test('slow navigation never exposes the previous page; retained pages survive back and retry', async () => {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: true, channel: 'chrome' });
   try {
     const page = await browser.newPage();
     const html = fs.readFileSync(path.join(__dirname, 'static/chat.html'), 'utf8');
@@ -77,7 +77,7 @@ test('slow navigation never exposes the previous page; retained pages survive ba
 });
 
 test('the full shell adopts an early pending page, and DOM readiness does not wait for images', async () => {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: true, channel: 'chrome' });
   try {
     const page = await browser.newPage();
     const html = fs.readFileSync(path.join(__dirname, 'static/chat.html'), 'utf8');

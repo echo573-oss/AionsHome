@@ -51,7 +51,7 @@ class MemoryCountApiTests(unittest.IsolatedAsyncioTestCase):
                 result = await memory_routes.list_memories(limit=50, before=None, q="needle")
 
         self.assertEqual(result["total"], 3)
-        self.assertEqual(result["kind_totals"], {"all": 3, "daily": 2, "long_term": 1})
+        self.assertEqual(result["kind_totals"], {"all": 3, "daily": 2, "long_term": 1, "friend": 0})
         self.assertEqual(result["filtered_total"], 1)
         self.assertEqual([item["id"] for item in result["items"]], ["daily-match"])
 

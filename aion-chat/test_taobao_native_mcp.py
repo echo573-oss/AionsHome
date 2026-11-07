@@ -10,6 +10,10 @@ import taobao_native_mcp as bridge
 
 
 class NativeSearchTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self._is_file_patcher = patch.object(bridge.Path, "is_file", return_value=True)
+        self._is_file_patcher.start()
+        self.addCleanup(self._is_file_patcher.stop)
     async def test_authorization_failure_survives_unavailable_cli_fallback(self):
         def unauthorized(request):
             return httpx.Response(401, json={

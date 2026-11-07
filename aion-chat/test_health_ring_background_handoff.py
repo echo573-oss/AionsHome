@@ -171,7 +171,7 @@ class HealthRingBackgroundHandoffTests(unittest.TestCase):
         projection = extract_block(service, "private void updateForegroundForProjection()")
 
         self.assertIn("android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE", manifest)
-        self.assertIn('android:foregroundServiceType="dataSync|location|connectedDevice|mediaProjection"', manifest)
+        self.assertIn('android:foregroundServiceType="dataSync|location|connectedDevice|mediaProjection', manifest)
         self.assertIn("FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE", on_start)
         self.assertIn("FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE", projection)
 

@@ -116,7 +116,7 @@ class MiBandAiHealthContextTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("最近30分钟：活动2分钟，20步", summary)
         self.assertIn("最近60分钟：活动3分钟，22步", summary)
         self.assertIn(
-            "睡眠:总计5m 小睡09:00-09:03(3m) 小睡10:00-10:02(2m) 深睡2m 浅睡2m REM1m",
+            "睡眠:总计5m\n小睡:09:00-09:03 | 3m\n小睡:10:00-10:02 | 2m\n深睡:2m | 浅睡:2m | REM:1m",
             summary,
         )
         self.assertIn("体重:64.4kg", summary)

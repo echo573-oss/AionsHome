@@ -27,6 +27,11 @@ class DeprecatedCliModelTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(
             config.MODELS,
             {
+                "AGY · Gemini 4 Argon (Medium)": {
+                    "provider": "antigravity_cli",
+                    "model": "gemini-4-argon-medium",
+                    "vision": True,
+                },
                 "AGY-3.1pro": {
                     "provider": "antigravity_cli",
                     "model": "gemini-3.1-pro-preview",
@@ -51,6 +56,11 @@ class DeprecatedCliModelTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(
             date_theater_routes.MODELS,
             {
+                "AGY · Gemini 4 Argon (Medium)": {
+                    "provider": "antigravity_cli",
+                    "model": "gemini-4-argon-medium",
+                    "vision": True,
+                },
                 "AGY-3.1pro": {
                     "provider": "antigravity_cli",
                     "model": "gemini-3.1-pro-preview",
@@ -99,8 +109,8 @@ class DeprecatedCliModelTests(unittest.IsolatedAsyncioTestCase):
 
 class ModelResolutionTests(unittest.TestCase):
     def test_codex_defaults_to_gpt_5_5_with_gpt_5_6_tiers_disabled(self):
-        self.assertEqual(config.BUILTIN_MODELS["Codex"]["provider"], "codex_cli")
-        self.assertEqual(config.BUILTIN_MODELS["Codex"]["model"], "gpt-5.5")
+        self.assertEqual(config.BUILTIN_MODELS["Codex-5.6-Sol"]["provider"], "codex_cli")
+        self.assertEqual(config.BUILTIN_MODELS["Codex-5.6-Sol"]["model"], "gpt-5.6-sol")
         self.assertNotIn("Codex-Sol", config.BUILTIN_MODELS)
         self.assertNotIn("Codex-Luna", config.BUILTIN_MODELS)
 

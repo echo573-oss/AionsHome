@@ -53,7 +53,7 @@ class ChatroomComposerMobilePerformanceTests(unittest.TestCase):
         )
 
     def test_chatroom_script_cache_key_includes_composer_fix(self):
-        version = "composer-mobile-performance-20260724"
+        version = "20261104-image-retry"
         self.assertRegex(
             self.html,
             rf'chatroom\.js\?v=[^"\n]*{version}',

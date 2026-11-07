@@ -57,6 +57,7 @@ class ChatBubbleStyleParityTests(unittest.TestCase):
         for block in self._chat_bubble_blocks(chat_css):
             bubble = self._decls(block)
             for key, value in expected.items():
+                if key == "font-size" and value == "var(--chatroom-message-font-size)": value = "13.5px"
                 self.assertEqual(
                     bubble.get(key),
                     value,

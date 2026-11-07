@@ -46,6 +46,7 @@ async function testSettingsLoadWithoutWaitingForModels() {
     refreshPhoneScreenStatus() {},
     refreshFloatingChatStatus() {},
     refreshMediaCacheStatus() {},
+    refreshSiwcStatus() {},
   };
   const imageUi = source.match(/function updateImageGenProviderUi\(\) \{[\s\S]*?\n\}/)[0];
   vm.runInNewContext(imageUi + '\n' + initSource, initContext);
