@@ -27,7 +27,7 @@ class VoiceCallOverlayTests(unittest.TestCase):
                     sse_queue=queue,
                     min_chars=1,
                     max_chars=20,
-                    cache_dir=ROOT / "data" / "test_tts_cache",
+                    cache_dir=__import__("config").DATA_DIR / "test_tts_cache",
                 )
                 streamer.feed("First sentence. Second sentence.")
                 await streamer.flush()

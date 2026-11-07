@@ -30,7 +30,7 @@ def other_home_running(main_path):
 
 
 def run(main_path):
-    data = main_path.parent / "data"
+    data = Path(os.environ["AIONSHOME_DATA_DIR"]) if os.environ.get("AIONSHOME_DATA_DIR", "").strip() else (main_path.parent / "data")
     data.mkdir(exist_ok=True)
 
     def record(result):

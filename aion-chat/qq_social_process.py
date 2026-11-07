@@ -9,7 +9,7 @@ import threading
 import time
 
 BASE = Path(__file__).resolve().parent
-DIRECTORY = BASE/'data/qq_social'
+from config import DATA_DIR; DIRECTORY = DATA_DIR / 'qq_social'
 # Keep the supervisor, worker and home proxy on the same loopback endpoint.
 PORT = 18788
 WORKER_URL = f'http://127.0.0.1:{PORT}'

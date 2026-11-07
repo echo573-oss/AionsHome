@@ -15,7 +15,7 @@ from .store import Store
 from .transport import BotTransport
 from qq_social_process import PORT
 
-DIRECTORY = Path(__file__).resolve().parents[1] / 'data' / 'qq_social'
+from config import DATA_DIR; DIRECTORY = DATA_DIR / 'qq_social'
 
 
 def create_app(directory=DIRECTORY):

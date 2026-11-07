@@ -133,7 +133,7 @@ def test_real_private_and_group_prompt_assembly(isolated):
         isolated.setattr(svakom_ai.manager, 'broadcast', AsyncMock(side_effect=sent.append))
         capabilities.set_capability_enabled('svakom', True)
         history = []
-        await chat._insert_private_ability_block(history, 0, 0, user_name='测试用户', model_key='test', whisper_mode=False)
+        await chat._insert_private_ability_block(history, 0, 0, user_name='测试用户', ai_name='测试AI', model_key='test', whisper_mode=False)
         assert '[SVAKOM:LOOP:' in str(history)
         # The response worker inherits the prompt builder's request permission.
         await asyncio.create_task(svakom_ai.process_commands('[SVAKOM:STOP]', 'private'))

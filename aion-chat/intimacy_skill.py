@@ -6,8 +6,8 @@ import threading
 from functools import wraps
 from pathlib import Path
 
-_POOL_PATH = Path(__file__).resolve().parent / "data" / "intimacy_play_pool.json"
-_STATE_PATH = Path(__file__).resolve().parent / "data" / "intimacy_state.json"
+from config import DATA_DIR; _POOL_PATH = DATA_DIR / "intimacy_play_pool.json"
+_STATE_PATH = DATA_DIR / "intimacy_state.json"
 _LOCK = threading.RLock()
 _ENABLED: set[str] = set()
 _SESSIONS: dict[str, dict] = {}

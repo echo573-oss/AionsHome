@@ -5,11 +5,11 @@ from pathlib import Path
 
 import aiosqlite
 
-from config import BASE_DIR
+from config import BASE_DIR, DATA_DIR, LIVE_DATA_DIR
 
 
 RECEPTION_PREFIX = "reception:"
-LOUNGE_DATABASE_PATH = BASE_DIR.parent / "AionsHome-Visitor-Lounge/data/visitor-lounge.sqlite3"
+LOUNGE_DATABASE_PATH = DATA_DIR / "visitor-lounge.sqlite3" if DATA_DIR.resolve() != LIVE_DATA_DIR.resolve() else BASE_DIR.parent / "AionsHome-Visitor-Lounge/data/visitor-lounge.sqlite3"
 
 # Lounge messages belong to a visitor rather than a visit. Bound each conversation
 # by its start/end and the next visit, so repeat visits never mix their messages.

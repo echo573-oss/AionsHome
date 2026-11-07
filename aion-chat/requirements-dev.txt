@@ -1,0 +1,10 @@
+# 测试专用依赖 —— 不参与离线安装。
+#
+# vendor/ 里没有这些 wheel，所以 一键安装环境.bat / requirements.txt 保持不动。
+# 新机器装完运行环境后，联网补装一次：
+#
+#   .venv\Scripts\python.exe -m pip install -r aion-chat\requirements-dev.txt
+#
+# 没有它也能跑 -Suite python / -Suite js；只是那批用 @pytest.fixture
+# 和参数化的模块（-Suite pytest）无法收集，会退化成导入错误。
+pytest==9.2.0

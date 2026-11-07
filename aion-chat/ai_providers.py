@@ -359,7 +359,7 @@ def _resolve_attachment_path(att) -> Path | None:
         name = att[len('/qq-media/'):]
         if not re.fullmatch(r'[a-zA-Z0-9_-]+\.jpg', name):
             return None
-        return Path(__file__).resolve().parent / 'data/qq_social/media' / name
+        return DATA_DIR / 'qq_social/media' / name
     if att.startswith("/cr-uploads/"):
         # /cr-uploads/2026-05-07/xxx.jpg → CODEX_UPLOADS_DIR/2026-05-07/xxx.jpg
         rel = att[len("/cr-uploads/"):]
@@ -1149,7 +1149,7 @@ async def call_gemini_cli(messages: list, model: str, meta: dict | None = None,
         debug_log = None
         if os.environ.get("GEMINI_CLI_DEBUG") == "1":
             from datetime import datetime
-            log_dir = Path(__file__).parent / "data" / "cli_debug"
+            log_dir = DATA_DIR / "cli_debug"
             log_dir.mkdir(parents=True, exist_ok=True)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             debug_log = log_dir / f"gemini_{ts}.log"

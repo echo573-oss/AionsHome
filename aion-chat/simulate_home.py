@@ -1,4 +1,8 @@
-"""恢复回家状态：发送家坐标让系统恢复 at_home"""
+"""恢复回家状态：发送家坐标让系统恢复 at_home
+
+手工模拟工具，不是测试。执行：python simulate_home.py
+（文件名故意不以 test_ 开头，避免被 unittest discover 收集后触发真实副作用）
+"""
 import asyncio, json, sys
 sys.path.insert(0, ".")
 from location import load_location_config, save_location_config, process_heartbeat, load_location_status
@@ -17,4 +21,5 @@ async def simulate_home():
     save_location_config(cfg)
     print("\n✅ 已恢复回家状态")
 
-asyncio.run(simulate_home())
+if __name__ == "__main__":
+    asyncio.run(simulate_home())

@@ -1,4 +1,4 @@
-import asyncio
+import asyncio, json
 import sys
 import tempfile
 import unittest
@@ -19,7 +19,7 @@ class IntimacySkillTests(unittest.TestCase):
             self.fail("intimacy_skill module is not installed")
         self.skill = intimacy_skill
         self.tempdir = tempfile.TemporaryDirectory()
-        self.old_state_path = intimacy_skill._STATE_PATH
+        self.old_state_path = intimacy_skill._STATE_PATH; self.old_pool_path = intimacy_skill._POOL_PATH; intimacy_skill._POOL_PATH = Path(self.tempdir.name) / "intimacy_play_pool.json"; intimacy_skill._POOL_PATH.write_text(json.dumps({"categories": [{"id": "cat1", "label": "测试分类", "modes": ["private", "group"], "subtypes": ["子项A", "子项B"]}], "locations": [{"id": "loc1", "label": "测试房间", "resources": ["bed"]}], "positions": [{"label": "主位A", "modes": ["private", "group"], "requires": ["bed"]}, {"label": "主位B", "modes": ["private", "group"], "requires": ["bed"]}], "group_positions": [{"label": "三人位A", "modes": ["group"], "requires": ["bed"]}], "psychology": ["心理A", "心理B", "心理C"], "group_dynamics": ["互动A"], "final_finish_targets": ["目标A"], "final_finish_relations_group": ["先后"]}, ensure_ascii=False), encoding="utf-8")
         intimacy_skill._STATE_PATH = Path(self.tempdir.name) / "intimacy_state.json"
         intimacy_skill._ENABLED.clear()
         intimacy_skill._SESSIONS.clear()
@@ -28,7 +28,7 @@ class IntimacySkillTests(unittest.TestCase):
 
     def tearDown(self):
         if hasattr(self, "skill"):
-            self.skill._STATE_PATH = self.old_state_path
+            self.skill._STATE_PATH = self.old_state_path; self.skill._POOL_PATH = self.old_pool_path; self.skill._POOL_PATH = self.old_pool_path
             self.skill._ENABLED.clear()
             self.skill._SESSIONS.clear()
             self.skill._RECENT_CARDS.clear()
@@ -166,7 +166,7 @@ class ChatroomIntimacyInjectionTests(unittest.TestCase):
 
         self.skill = intimacy_skill
         self.tempdir = tempfile.TemporaryDirectory()
-        self.old_state_path = intimacy_skill._STATE_PATH
+        self.old_state_path = intimacy_skill._STATE_PATH; self.old_pool_path = intimacy_skill._POOL_PATH; intimacy_skill._POOL_PATH = Path(self.tempdir.name) / "intimacy_play_pool.json"; intimacy_skill._POOL_PATH.write_text(json.dumps({"categories": [{"id": "cat1", "label": "测试分类", "modes": ["private", "group"], "subtypes": ["子项A", "子项B"]}], "locations": [{"id": "loc1", "label": "测试房间", "resources": ["bed"]}], "positions": [{"label": "主位A", "modes": ["private", "group"], "requires": ["bed"]}, {"label": "主位B", "modes": ["private", "group"], "requires": ["bed"]}], "group_positions": [{"label": "三人位A", "modes": ["group"], "requires": ["bed"]}], "psychology": ["心理A", "心理B", "心理C"], "group_dynamics": ["互动A"], "final_finish_targets": ["目标A"], "final_finish_relations_group": ["先后"]}, ensure_ascii=False), encoding="utf-8")
         intimacy_skill._STATE_PATH = Path(self.tempdir.name) / "intimacy_state.json"
         intimacy_skill._ENABLED.clear()
         intimacy_skill._SESSIONS.clear()
@@ -174,7 +174,7 @@ class ChatroomIntimacyInjectionTests(unittest.TestCase):
         intimacy_skill._ACTIVE_GENERATIONS.clear()
 
     def tearDown(self):
-        self.skill._STATE_PATH = self.old_state_path
+        self.skill._STATE_PATH = self.old_state_path; self.skill._POOL_PATH = self.old_pool_path
         self.skill._ENABLED.clear()
         self.skill._SESSIONS.clear()
         self.skill._RECENT_CARDS.clear()

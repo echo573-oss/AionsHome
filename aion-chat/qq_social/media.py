@@ -9,7 +9,7 @@ import uuid
 import httpx
 from PIL import Image, ImageOps
 
-DIRECTORY = Path(__file__).resolve().parents[1] / 'data/qq_social/media'
+from config import DATA_DIR; DIRECTORY = DATA_DIR / 'qq_social/media'
 MAX_IMAGES = 4
 MAX_BYTES = 8 * 1024 * 1024
 

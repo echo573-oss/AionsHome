@@ -175,3 +175,25 @@ docs/superpowers/specs/2026-07-29-seven-day-data-backup-design.md
 # Reproducible official ASR binaries (scripts/prepare-local-asr.py)
 AionApp/app/libs/sherpa-onnx-1.13.8.aar
 AionApp/app/src/main/assets/asr/zipformer-small-bilingual/
+
+# ── 本机临时产物与本地备份（2026-11 整理，均不影响运行） ──
+# 根目录调试脚本、迁移备份、导出补丁与本地数据库快照：只在本机有用，不进版本库。
+/backups/
+/_agent_tmp/
+/_export_fork_patch/
+/_export_fork_patch.zip
+/_p.b64
+/_patch_settings_html.py
+/_scan_tts*.py
+/_set_edge_tts.py
+
+# 改动前的就地备份（*.bak-siwc / *.before-时间戳 / *.backup-时间戳）
+*.bak
+*.bak-*
+*.before-*
+*.backup-*
+
+# 页面素材与点播语音补丁的临时快照目录
+aion-chat/_ondemand_tts_backup/
+public/_backup_*/
+aion-chat/_syslogs.json

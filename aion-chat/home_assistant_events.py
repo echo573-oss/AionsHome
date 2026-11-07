@@ -14,13 +14,13 @@ import logging
 import time
 from typing import Any
 
-from config import BASE_DIR, load_worldbook
+from config import BASE_DIR, DATA_DIR, load_worldbook
 
 log = logging.getLogger("home_assistant_events")
 
-HA_CONFIG_PATH = BASE_DIR / "data" / "home_assistant_mcp.json"
-EVENT_CONFIG_PATH = BASE_DIR / "data" / "home_assistant_events.json"
-EVENT_LOG_PATH = BASE_DIR / "data" / "home_assistant_events.jsonl"
+HA_CONFIG_PATH = DATA_DIR / "home_assistant_mcp.json"
+EVENT_CONFIG_PATH = DATA_DIR / "home_assistant_events.json"
+EVENT_LOG_PATH = DATA_DIR / "home_assistant_events.jsonl"
 
 
 class HomeAssistantEventListener:

@@ -8,8 +8,8 @@ from pathlib import Path
 # ── 路径 ─────────────────────────────────────────
 BASE_DIR = Path(__file__).parent
 PUBLIC_DIR = BASE_DIR.parent / "public"
-DATA_DIR = BASE_DIR / "data"
-DATA_DIR.mkdir(exist_ok=True)
+LIVE_DATA_DIR = BASE_DIR / "data"
+_env_data_dir = os.environ.get("AIONSHOME_DATA_DIR", "").strip()
 
 
 def _is_test_process() -> bool:
@@ -23,12 +23,15 @@ def _is_test_process() -> bool:
     )
 
 
-if _is_test_process():
+if _env_data_dir and (not _is_test_process() or Path(_env_data_dir).resolve() != LIVE_DATA_DIR.resolve()): DATA_DIR = Path(_env_data_dir).resolve(); DB_PATH = DATA_DIR / "chat.db"
+elif _is_test_process():
     _TEST_DB_DIR = Path(tempfile.mkdtemp(prefix=f"aionshome-tests-{os.getpid()}-"))
     atexit.register(shutil.rmtree, _TEST_DB_DIR, ignore_errors=True)
-    DB_PATH = _TEST_DB_DIR / "chat.db"
+    os.environ["AIONSHOME_DATA_DIR"] = str(_TEST_DB_DIR); DATA_DIR = _TEST_DB_DIR; DB_PATH = DATA_DIR / "chat.db"
 else:
-    DB_PATH = DATA_DIR / "chat.db"
+    DATA_DIR = LIVE_DATA_DIR; DB_PATH = DATA_DIR / "chat.db"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+_IS_ISOLATED_DATA_DIR = _is_test_process() or (DATA_DIR.resolve() != LIVE_DATA_DIR.resolve())
 UPLOADS_DIR = DATA_DIR / "uploads"
 UPLOADS_DIR.mkdir(exist_ok=True)
 IMAGE_ANCHORS_DIR = DATA_DIR / "image_anchors"
@@ -38,7 +41,7 @@ ALBUM_IMAGES_DIR = ALBUM_DIR / "images"
 ALBUM_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 SONGS_DIR = DATA_DIR / "songs"
 SONGS_DIR.mkdir(exist_ok=True)
-CODEX_UPLOADS_DIR = BASE_DIR.parent / "Connor-Codex" / "uploads"
+CODEX_UPLOADS_DIR = (DATA_DIR / "connor_uploads") if _IS_ISOLATED_DATA_DIR else (BASE_DIR.parent / "Connor-Codex" / "uploads")
 CODEX_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 CHATS_DIR = DATA_DIR / "chats"
 CHATS_DIR.mkdir(exist_ok=True)
@@ -75,7 +78,7 @@ def load_settings():
         return settings
     keys = {"gemini_key": "", "siliconflow_key": "", "gemini_free_key": "", "aipro_key": ""}
     txt = BASE_DIR.parent / "所需要的API.txt"
-    if txt.exists():
+    if not _IS_ISOLATED_DATA_DIR and txt.exists():
         with open(txt, "r", encoding="utf-8") as f:
             for line in f:
                 if "gemini-api" in line.lower():

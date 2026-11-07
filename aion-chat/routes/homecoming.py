@@ -12,7 +12,7 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from chatroom import load_chatroom_config
-from config import MODELS, SETTINGS
+from config import DATA_DIR, MODELS, SETTINGS
 from database import get_db
 from homecoming.contracts import (
     HOMECOMING_SCHEMA_VERSION,
@@ -49,8 +49,8 @@ from homecoming.return_importer import StaleImportPlan, apply_import_plan
 
 router = APIRouter(prefix="/api/homecoming/v1", tags=["homecoming"])
 RETURN_QUARANTINE_ROOT = (
-    Path(__file__).resolve().parents[1]
-    / "data"
+    DATA_DIR
+    # derived from DATA_DIR
     / "homecoming_returns"
     / "quarantine"
 )

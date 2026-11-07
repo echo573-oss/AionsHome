@@ -1,4 +1,8 @@
-"""模拟外出测试脚本：发送假坐标让系统认为你在三里屯"""
+"""模拟外出测试脚本：发送假坐标让系统认为你在三里屯
+
+手工模拟工具，不是测试。执行：python simulate_outside.py
+（文件名故意不以 test_ 开头，避免被 unittest discover 收集后触发真实副作用）
+"""
 import asyncio, json, sys
 sys.path.insert(0, ".")
 from location import load_location_config, save_location_config, process_heartbeat, load_location_status
@@ -34,6 +38,7 @@ async def simulate_outside():
     save_location_config(cfg)
     print("\n✅ 已模拟外出到湖南老家！现在可以去聊天测试 POI_SEARCH")
     print("   试着问: 附近有什么好吃的？")
-    print("   测试完后运行: python test_simulate_home.py 恢复")
+    print("   测试完后运行: python simulate_home.py 恢复")
 
-asyncio.run(simulate_outside())
+if __name__ == "__main__":
+    asyncio.run(simulate_outside())

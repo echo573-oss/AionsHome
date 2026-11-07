@@ -509,7 +509,11 @@ class QQServiceTests(unittest.IsolatedAsyncioTestCase):
         self.service.configure({'enabled':True,'bind_first_group':True,'mode':'natural'})
         send=AsyncMock(return_value={'id':'quoted-out'})
         self.service.transports['aion'].send=send
-        self.service.image_wait_seconds=.04
+        # The merge window must outlast one synchronous SQLite write, or a
+        # loaded machine lets the deadline expire between the two ingests.
+        # The followup text releases the batch immediately, so a wider window
+        # costs no wall-clock time.
+        self.service.image_wait_seconds=2.0
         picture={**self.event,'timestamp':time.time(),'content':'',
                  'attachments':[{'content_type':'image/png','url':'https://gchat.qpic.cn/a.png'}],
                  'message_scene':{'ext':['msg_idx=REFIDX_picture']}}
@@ -599,7 +603,10 @@ class QQServiceTests(unittest.IsolatedAsyncioTestCase):
             received.append(dict(event))
             return '合并回复'
         self.service.generator=capture
-        self.service.image_wait_seconds=.08
+        # Same reasoning as the merge test above: the window has to survive a
+        # slow synchronous write. The followup text releases the batch, so the
+        # wider window does not slow the test down.
+        self.service.image_wait_seconds=2.0
         self.service.configure({'enabled':True,'bind_first_group':True,'mode':'natural'})
         picture={**self.event,'timestamp':time.time(),'content':'','attachments':[{'content_type':'image/png','url':'https://gchat.qpic.cn/one.png'}]}
         await self.service.ingest('aion','GROUP_MESSAGE_CREATE',picture)
@@ -956,7 +963,20 @@ class QQSupervisorTests(unittest.TestCase):
         self.assertNotIn('STOPPED_PROCESS', result.stdout)
         self.assertIn('STARTED_HOME', result.stdout)
 
-    def run_restart_script(self, worker, home=True, unavailable=False):
+    def test_restart_refuses_to_run_without_python_environment(self):
+        result = self.run_restart_script(worker=False, python_present=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Python environment missing', result.stdout + result.stderr)
+        self.assertNotIn('STARTED_HOME', result.stdout)
+
+    def test_restart_reports_failure_when_kitchen_page_is_unavailable_or_wrong(self):
+        for status, content in ((404, 'Not Found'), (200, '<html>wrong page</html>')):
+            with self.subTest(status=status):
+                result = self.run_restart_script(worker=False, kitchen_status=status, kitchen_content=content)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('Page /kitchen is unavailable or served the wrong content.', result.stdout + result.stderr)
+
+    def run_restart_script(self, worker, home=True, unavailable=False, python_present=True, kitchen_status=200, kitchen_content='<div id="kitchenTitle"></div>'):
         import os
         import subprocess
         if os.name != 'nt':
@@ -965,6 +985,7 @@ class QQSupervisorTests(unittest.TestCase):
         root = str(Path(__file__).resolve().parents[1]).replace("'", "''")
         harness = r'''
 $ErrorActionPreference = 'Stop'
+$pythonPath = Join-Path $root '.venv\Scripts\python.exe'
 function Get-NetTCPConnection {
     param($LocalPort, $State, $ErrorAction)
     if (($homeRunning -and $LocalPort -eq 8080) -or ($worker -and $LocalPort -eq 18788)) {
@@ -975,7 +996,13 @@ function Get-CimInstance {
     param($ClassName, $Filter)
     $id = [int]($Filter -replace 'ProcessId=', '')
     $command = if ($id -eq 8080) { 'main.py' } else { '-m qq_social.worker' }
-    [pscustomobject]@{ ProcessId = $id; CommandLine = "$root $command" }
+    [pscustomobject]@{
+        ProcessId = $id
+        ParentProcessId = 0
+        CommandLine = "$root $command"
+        ExecutablePath = $pythonPath
+        CreationDate = 'test-creation-date'
+    }
 }
 function Invoke-RestMethod {
     param($Uri, $TimeoutSec, $Headers)
@@ -985,16 +1012,46 @@ function Invoke-RestMethod {
     }
     return @{ settings = @{ bring_home = $true } }
 }
+# The script probes three pages over HTTP. Replace the network call instead of
+# depending on a live server being up on 8080.
+function Invoke-WebRequest {
+    param($Uri, $TimeoutSec, [switch]$UseBasicParsing)
+    [pscustomobject]@{
+    } | Out-Null; if ($true) {
+    if ($Uri -like '*/chat') { return [pscustomobject]@{ StatusCode = 200; Content = '<div id="chatTitle"></div>' } }
+        if ($Uri -like '*/kitchen') { return [pscustomobject]@{ StatusCode = $kitchenStatus; Content = $kitchenContent } }
+        if ($Uri -like '*/music-box') { return [pscustomobject]@{ StatusCode = 200; Content = '<script src="music-box.js"></script>' } }
+        return [pscustomobject]@{ StatusCode = 404; Content = '' }
+    }
+}
 function Stop-Process { param($Id) Write-Output 'STOPPED_PROCESS' }
 function Get-ScheduledTask { return $null }
-function Start-Process { $script:started = $true; Write-Output 'STARTED_HOME' }
-function Start-Sleep {}
+# The script assigns the return value of Start-Process to a variable, so a
+# Write-Output here would be captured instead of reaching stdout.
+function Start-Process {
+    $script:started = $true
+    [Console]::Out.WriteLine('STARTED_HOME')
+}
+$global:now = [datetime]'2026-01-01T00:00:00Z'
+function Get-Date { return $global:now }
+function Start-Sleep { $global:now = $global:now.AddSeconds(30) }
+function New-Item {}
 function Get-Content { param($LiteralPath, [switch]$Raw) return 'test-management' }
-function Test-Path { param($LiteralPath) return $false }
+# The script checks two different paths: the venv interpreter (must exist, or it
+# aborts before the restart logic runs) and the optional SIWC sidecar launcher
+# (must NOT exist, or a real sidecar process would be spawned during the test).
+function Test-Path {
+    param($LiteralPath, $PathType)
+    if ($LiteralPath -like '*python.exe') { return $pythonPresent }
+    return $false
+}
 & "$root\aion-chat\restart-home-qq.ps1"
 '''
         harness = (f"$root = '{root}'\n$worker = ${str(worker).lower()}\n"
-                   f"$homeRunning = ${str(home).lower()}\n$unavailable = ${str(unavailable).lower()}\n" + harness)
+                   f"$homeRunning = ${str(home).lower()}\n$unavailable = ${str(unavailable).lower()}\n"
+                   f"$pythonPresent = ${str(python_present).lower()}\n"
+                   f"$kitchenStatus = {int(kitchen_status)}\n"
+                   f"$kitchenContent = '{kitchen_content}'\n" + harness)
         return subprocess.run(['powershell.exe', '-NoProfile', '-Command', harness],
                               capture_output=True, text=True, errors='replace', timeout=20)
 
