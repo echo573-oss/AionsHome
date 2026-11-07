@@ -3159,7 +3159,7 @@ async function loadOlderMessages() {
   const el = $("messages");
   const prevHeight = el.scrollHeight;
   try {
-    const older = await api("GET", `/api/conversations/${currentConvId}/messages?limit=${MSG_PAGE_SIZE}&before=${oldest.created_at}`);
+    const older = await api("GET", `/api/conversations/${currentConvId}/messages?limit=${MSG_PAGE_SIZE}&before=${oldest.created_at}&before_id=${encodeURIComponent(oldest.id)}`);
     if (older.length === 0) { hasMoreMessages = false; return; }
     hasMoreMessages = older.length >= MSG_PAGE_SIZE;
     setCurrentMessages([...older, ...currentMessages]);

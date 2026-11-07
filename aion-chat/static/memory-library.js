@@ -285,6 +285,12 @@
     if (window.parent !== window && typeof window.parent.openSubPage === 'function') window.parent.openSubPage(url);
     else location.href = url;
   }
+  el('detail').addEventListener('click', event => {
+    const link = event.target.closest('a.source-jump');
+    if (!link || window.parent === window) return;
+    event.preventDefault();
+    window.parent.postMessage({type:'aion-memory-source', href:link.href}, location.origin);
+  });
   function openTools() {
     const store = state.store;
     modal('记忆库工具', `<p class="note">当前：${esc(names[store])} 的记忆库</p>` +

@@ -348,6 +348,23 @@ window.AionSubPageNavigation = (() => {
   const retryButton = document.getElementById('subPageLoadingRetry');
   const watched = new WeakSet();
   let active = null, timer = null;
+  window.addEventListener('message', event => {
+    if (event.origin !== location.origin || event.data?.type !== 'aion-memory-source') return;
+    const frame = [...document.querySelectorAll('.sub-page-frame')]
+      .find(item => item.contentWindow === event.source);
+    if (!frame || typeof event.data.href !== 'string') return;
+    try {
+      if (frame.contentWindow.location.pathname !== '/memory') return;
+      const target = new URL(event.data.href, location.origin);
+      if (target.origin !== location.origin) return;
+      const key = target.pathname === '/chat' ? 'conv' : target.pathname === '/chatroom' ? 'room' : null;
+      if (key && target.searchParams.get(key) && target.searchParams.get('msg')) {
+        location.assign(target.href);
+      }
+    } catch (_) {
+      // The frame may have navigated away before delivery.
+    }
+  });
   function hide() {
     clearTimeout(timer);
     panel.hidden = true;
@@ -494,7 +511,7 @@ window.AionSubPageNavigation = (() => {
 <script src="/static/native-message-sync.js?v=20261030-weak-network"></script>
 <link rel="stylesheet" href="/static/kitchen-cards.css?v=20261103-lookup2">
 <script src="/static/kitchen-cards.js?v=20261103-lookup3"></script>
-<script src="/static/chat.js?v=20261103-lookup"></script>
+<script src="/static/chat.js?v=20261106-history-cursor"></script>
 <script src="/static/voice-call-policy.js?v=voice-latency-20260902a"></script>
 <script src="/static/voice-call.js?v=voice-latency-20260902a"></script>
 

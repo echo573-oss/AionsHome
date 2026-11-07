@@ -1184,18 +1184,25 @@ async def delete_conversation(conv_id: str):
 
 # ── 消息 CRUD ─────────────────────────────────────
 @router.get("/api/conversations/{conv_id}/messages")
-async def list_messages(conv_id: str, limit: int = Query(50, ge=1, le=500), before: Optional[float] = Query(None)):
-    """获取消息，支持分页。limit=条数，before=时间戳(加载更早的消息)"""
+async def list_messages(conv_id: str, limit: int = Query(50, ge=1, le=500), before: Optional[float] = Query(None), before_id: Optional[str] = Query(None)):
+    """获取消息。分页时可同时传入时间戳和上一页最早的消息 ID。"""
     async with get_db() as db:
         db.row_factory = __import__('aiosqlite').Row
-        if before:
+        if before is not None and before_id:
             cur = await db.execute(
-                "SELECT * FROM messages WHERE conv_id=? AND created_at<? ORDER BY created_at DESC LIMIT ?",
+                "SELECT * FROM messages WHERE conv_id=? AND (created_at,rowid)<"
+                "(?,COALESCE((SELECT rowid FROM messages WHERE conv_id=? AND id=? AND created_at=?),0)) "
+                "ORDER BY created_at DESC,rowid DESC LIMIT ?",
+                (conv_id, before, conv_id, before_id, before, limit)
+            )
+        elif before is not None:
+            cur = await db.execute(
+                "SELECT * FROM messages WHERE conv_id=? AND created_at<? ORDER BY created_at DESC,rowid DESC LIMIT ?",
                 (conv_id, before, limit)
             )
         else:
             cur = await db.execute(
-                "SELECT * FROM messages WHERE conv_id=? ORDER BY created_at DESC LIMIT ?",
+                "SELECT * FROM messages WHERE conv_id=? ORDER BY created_at DESC,rowid DESC LIMIT ?",
                 (conv_id, limit)
             )
         rows = await cur.fetchall()
@@ -1323,21 +1330,21 @@ async def messages_around(conv_id: str, msg_id: str, limit: int = Query(25, ge=1
     """获取指定消息前后各 limit 条消息，用于跳转定位"""
     async with get_db() as db:
         db.row_factory = __import__('aiosqlite').Row
-        cur = await db.execute("SELECT created_at FROM messages WHERE id=?", (msg_id,))
+        cur = await db.execute("SELECT rowid AS sequence,created_at FROM messages WHERE conv_id=? AND id=?", (conv_id, msg_id))
         target = await cur.fetchone()
         if not target:
             return []
-        ts = target["created_at"]
+        cursor = (target["created_at"], target["sequence"])
         # 取目标消息之前（含自身）的 limit 条
         cur_before = await db.execute(
-            "SELECT * FROM messages WHERE conv_id=? AND created_at<=? ORDER BY created_at DESC LIMIT ?",
-            (conv_id, ts, limit)
+            "SELECT * FROM messages WHERE conv_id=? AND (created_at,rowid)<=(?,?) ORDER BY created_at DESC,rowid DESC LIMIT ?",
+            (conv_id, *cursor, limit)
         )
         before = list(reversed(await cur_before.fetchall()))
         # 取目标消息之后的 limit 条
         cur_after = await db.execute(
-            "SELECT * FROM messages WHERE conv_id=? AND created_at>? ORDER BY created_at ASC LIMIT ?",
-            (conv_id, ts, limit)
+            "SELECT * FROM messages WHERE conv_id=? AND (created_at,rowid)>(?,?) ORDER BY created_at ASC,rowid ASC LIMIT ?",
+            (conv_id, *cursor, limit)
         )
         after = await cur_after.fetchall()
         rows = before + list(after)
