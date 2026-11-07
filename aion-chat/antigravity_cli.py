@@ -16,7 +16,7 @@ from pathlib import Path
 
 AGENT_NAME = 'home-companion'
 VISION_AGENT_NAME = 'home-companion-vision'
-CHAT_WORKSPACE = Path(__file__).parent / 'data' / 'antigravity-login'
+from config import DATA_DIR; CHAT_WORKSPACE = DATA_DIR / 'antigravity-login'
 PROFILE_SOURCE = Path(__file__).parent / 'prompts' / 'antigravity_companion.md'
 VISION_PROFILE_SOURCE = PROFILE_SOURCE.with_name('antigravity_companion_vision.md')
 CLI_SETTINGS = Path.home() / '.gemini' / 'antigravity-cli' / 'settings.json'
@@ -105,6 +105,15 @@ def _process_options():
     return {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}
 
 
+def _cli_env():
+    env = {**os.environ, 'NO_COLOR': '1'}
+    proxy = env.get('AION_AGY_PROXY', '').strip()
+    if proxy:
+        for key in ('HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy'):
+            env[key] = proxy
+    return env
+
+
 def parse_model_catalog(text):
     """Read model slugs from the official catalog, without inventing model IDs."""
     text = _ANSI.sub('', text)
@@ -146,7 +155,7 @@ async def discover_models(force=False):
         process = await asyncio.create_subprocess_exec(
             binary, 'models', stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-            **_process_options(),
+            env=_cli_env(), **_process_options(),
         )
         try:
             stdout, stderr = await asyncio.wait_for(process.communicate(), 30)
@@ -252,7 +261,7 @@ async def _stream_chat(binary, prompt, model, workspace, timeout, *, agent=AGENT
                 *build_chat_command(binary, model, timeout, agent=agent), cwd=str(workspace),
                 stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE, limit=8 * 1024 * 1024,
-                env={**os.environ, 'NO_COLOR': '1'}, **_process_options(),
+                env=_cli_env(), **_process_options(),
             ))
             stderr_task = asyncio.create_task(_read_stderr(process.stderr))
             async with asyncio.timeout(_timeout_seconds(timeout) + 30):

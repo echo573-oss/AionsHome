@@ -81,7 +81,15 @@ if (-not $StartOnly) {
 }
 if (-not $StartOnly -or -not $targets) {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $errorPath) | Out-Null
-    $started = Start-Process -FilePath $pythonPath -ArgumentList '-u','main.py' -WorkingDirectory $serverPath -WindowStyle Hidden -RedirectStandardOutput $outputPath -RedirectStandardError $errorPath -PassThru
+    $oldAgyProxy = $env:AION_AGY_PROXY
+    try {
+        if (-not $env:AION_AGY_PROXY -and (Get-NetTCPConnection -LocalPort 7897 -State Listen -ErrorAction SilentlyContinue)) {
+            $env:AION_AGY_PROXY = 'http://127.0.0.1:7897'
+        }
+        $started = Start-Process -FilePath $pythonPath -ArgumentList '-u','main.py' -WorkingDirectory $serverPath -WindowStyle Hidden -RedirectStandardOutput $outputPath -RedirectStandardError $errorPath -PassThru
+    } finally {
+        $env:AION_AGY_PROXY = $oldAgyProxy
+    }
 }
 
 $deadline = (Get-Date).AddSeconds(55)
