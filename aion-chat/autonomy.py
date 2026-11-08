@@ -1374,7 +1374,8 @@ async def _run_album_browse(actor: str) -> dict:
             "你还可以自由决定是否给用户留一句话，不必每次都留言，也不需要调用其他行动。"
             "如果想留言，将 share 设为 true，并在 share_message 中写一句自然、直接对用户说的话；"
             "系统会把这句话发到你最后活跃的聊天窗口，只发送文字，不附带相册照片。"
-            "如果不想留言，将 share 设为 false，share_message 留空。\n"
+            "如果不想留言，将 share 设为 false，share_message 留空。"
+            "若看完后自己真有一个值得留给未来继续琢磨的想法，可额外输出 recent_thought 字符串；没有就省略这个字段。不要为了留痕编造感想。\n"
             + json.dumps(descriptions, ensure_ascii=False)
             + '\n只返回 JSON：{"reflection":"你的感想","share":false,"share_message":""}'
         ),
@@ -1503,13 +1504,15 @@ async def _run_memory_browse(actor: str) -> dict:
     result = await _ask_actor_json(actor, (
         "[随机翻看记忆库 - 读完某一天]\n"
         "你刚才翻看了下面这一天的所有摘要记忆。这里只包含摘要记忆，不包含挂载的聊天原文。"
-        "读完后请选择一件事：发一条朋友圈、写一篇日记随笔、或私聊给用户发一条消息，表达你的感想。"
-        "只返回 JSON。\n\n"
+        "读完后如果想做点什么，可以发朋友圈、写日记随笔或私聊用户；"
+        "也可以选择 none，安静结束。"
+        "如果这次阅读确实有一个想给未来自己留下的念头，可额外输出 recent_thought 字符串；"
+        "没有就省略，不必编造心得。只返回 JSON。\n\n"
         f"记忆日期：{selected_day}\n"
         f"时间范围：{day_label}\n"
         f"摘要记忆：\n{day_summary}\n\n"
         "格式：\n"
-        '{"after_read_action":"post_moment/write_diary/private_message",'
+        '{"after_read_action":"post_moment/write_diary/private_message/none",'
         '"moment_content":"","diary_title":"","diary_content":"","diary_mood":"","private_message":""}'
     ))
     action = str(result.get("after_read_action") or "none").strip()
@@ -1769,7 +1772,9 @@ async def _run_home_dynamics(actor: str) -> dict:
         "如果选择 reply_moment，target_index 必须指向一条朋友圈，且不要回复你自己的朋友圈。\n"
         "如果选择 group_tease，target_index 可以指向触发你吐槽的动态，并填写 group_message。\n"
         "如果选择 private_message，填写 private_message。\n"
-        "如果选择 write_diary，填写 diary_title、diary_content 和 diary_mood。\n\n"
+        "如果选择 write_diary，填写 diary_title、diary_content 和 diary_mood。"
+        "如果这次查看自然产生了一个值得留给未来自己的想法，可额外输出 recent_thought 字符串；"
+        "没有就省略，不必为了留痕写感想。\n\n"
         '格式：{"after_read_action":"reply_moment/group_tease/private_message/write_diary/none",'
         '"target_index":1,"group_message":"","private_message":"","diary_title":"","diary_content":"","diary_mood":"",'
         '"reason":"一句话理由"}'
@@ -2039,6 +2044,8 @@ async def _run_wish_pool(actor: str) -> dict:
         f"写歌能力：\n{song_ability}\n"
         f"图片能力：\n{image_ability}\n"
         f"点歌能力：\n{music_ability}\n\n"
+        "如果实现愿望时自己真的想留下一条以后再想的念头，可在 JSON 中额外放 recent_thought 字符串；"
+        "没有就省略。它只给自己的记忆库，不会直接发给用户。\n"
         "只返回一个 JSON 对象，不要使用 Markdown 代码块。格式：\n"
         '{"completed":true或false,"response":"给用户看的完整回复，可包含SONG指令",'
         '"song_success_message":"歌曲真正生成成功后补充的一句话",'
