@@ -32,6 +32,21 @@ from autonomy_niches import archive_album_event, create_niche_card, recent_niche
 
 _AUTONOMY_WAKE_INTERNAL = ContextVar("autonomy_wake_internal", default=False)
 _AUTONOMY_WAKE_MONITOR_CONTEXT = ContextVar("autonomy_wake_monitor_context", default=None)
+_AUTONOMY_ACTIVITY_THOUGHT = ContextVar("autonomy_activity_thought", default=None)
+
+
+def _capture_activity_thought(data: dict) -> None:
+    """Capture a voluntary note from an existing activity model response.
+
+    Never call a model to ask for a note. The activity owns its decision, and
+    only one note is kept from a completed wake.
+    """
+    slot = _AUTONOMY_ACTIVITY_THOUGHT.get()
+    if slot is None or not isinstance(data, dict):
+        return
+    raw = data.get("recent_thought")
+    if isinstance(raw, str) and raw.strip():
+        slot["text"] = raw.strip()[:380]
 
 
 ACTION_DEFS = {
@@ -473,7 +488,9 @@ async def _ask_actor_json(actor: str, instruction: str, *, limit: int = 30) -> d
     messages.append({"role": "user", "content": instruction})
     from proactive_companionship import inject_proactive_ability
     inject_proactive_ability(messages, actor)
-    return _json_extract(await _call_actor(actor, messages))
+    data = _json_extract(await _call_actor(actor, messages))
+    _capture_activity_thought(data)
+    return data
 
 
 async def _capture_autonomy_monitor_context(actor: str):
@@ -1364,6 +1381,7 @@ async def _run_album_browse(actor: str) -> dict:
         "attachments": [{"type": "image", "url": p["url"]} for p in photos],
     })
     result = _json_extract(await _call_actor(actor, messages))
+    _capture_activity_thought(result)
     reflection = str(result.get("reflection") or "").strip()
     if not reflection:
         raise RuntimeError("翻看相册未返回感想，本次照片保持未读")
@@ -1427,45 +1445,20 @@ async def _run_diary_browse(actor: str) -> dict:
 
 
 async def _maybe_save_autonomous_thought(
-    actor: str, action: str, selected: dict, result: dict, session_id: str,
+    actor: str, action: str, selected: dict, result: Any, session_id: str,
+    *, proposed: str = "",
 ) -> dict | None:
-    """Only retain thoughts the actor voluntarily chooses after doing something."""
+    """Persist a thought already chosen during the activity, without another model call."""
     if action in {"rest", "private_chat", "role_chat"}:
+        return None
+    native = result.get("recent_thought") if isinstance(result, dict) else getattr(result, "recent_thought", "")
+    thought = str(proposed or native or "").strip()[:380]
+    if not thought:
         return None
     from recent_thoughts import save_recent_thought
 
-    thought = str(result.get("recent_thought") or "").strip()
-    # Diary browsing already asked whether to keep a thought. Do not ask twice.
-    if not thought and action != "diary_browse" and action in {
-        "memory_browse", "home_dynamics", "album_browse", "web_roam",
-        "xhs_roam", "taobao_roam", "wish_pool", "friend_visit",
-        "board_check", "board_visit",
-    }:
-        event = result.get("event") if isinstance(result.get("event"), dict) else {}
-        short_result = {
-            "why": str(selected.get("reason") or "")[:220],
-            "event": str(event.get("title") or "")[:160],
-            "detail": str(event.get("detail") or "")[:400],
-            "reflection": str(result.get("reflection") or "")[:320],
-            "message": str(result.get("message") or "")[:320],
-        }
-        try:
-            choice = await _ask_actor_json(actor, (
-                "[留下一条近期想法？]\n"
-                f"你刚才完成了自主活动「{ACTION_DEFS.get(action, action)}」。\n"
-                f"刚才的经过：{json.dumps(short_result, ensure_ascii=False)}\n"
-                "你自己有没有由此真正想到一件还想继续琢磨、或以后可能想在主聊天里自然提起的事？"
-                "大多数活动不需要留痕。如果没有，请 keep=false。"
-                "这不是给用户看的汇报，也不是任务清单，别记录活动流水账或重复已经发出的消息。"
-                '只返回 JSON：{"keep":false,"thought":""}'
-            ), limit=15)
-            if choice.get("keep") is True:
-                thought = str(choice.get("thought") or "").strip()
-        except Exception:
-            return None
-    if not thought:
-        return None
-    source_ref = str(result.get("read_diary_id") or session_id)
+    diary_id = result.get("read_diary_id") if isinstance(result, dict) else None
+    source_ref = str(diary_id or session_id)
     return await save_recent_thought(
         actor, thought, source_action=action, source_ref=source_ref,
     )
@@ -2285,6 +2278,8 @@ async def _run_actor_once(actor: str, *, manual: bool = False, idle_minutes: int
         selected.get("reason", ""),
         metadata={"selected_action": action, "manual": manual, "session_id": session_id},
     )
+    thought_slot: dict[str, str] = {}
+    thought_token = _AUTONOMY_ACTIVITY_THOUGHT.set(thought_slot)
     try:
         if action == "rest":
             result = {}
@@ -2338,6 +2333,8 @@ async def _run_actor_once(actor: str, *, manual: bool = False, idle_minutes: int
         shared = False
         ok = False
         error = str(exc)
+    finally:
+        _AUTONOMY_ACTIVITY_THOUGHT.reset(thought_token)
 
     action_titles = {
         "rest": f"{actor_name}觉得暂时没什么想做，继续休息了",
@@ -2399,9 +2396,12 @@ async def _run_actor_once(actor: str, *, manual: bool = False, idle_minutes: int
         },
     )
     recent_thought = None
-    if ok and isinstance(result, dict):
+    if ok and outcome not in {"round_limit", "failed", "no_direction", "tool_failed"}:
         try:
-            recent_thought = await _maybe_save_autonomous_thought(actor, action, selected, result, session_id)
+            recent_thought = await _maybe_save_autonomous_thought(
+                actor, action, selected, result, session_id,
+                proposed=thought_slot.get("text", ""),
+            )
         except Exception as exc:
             print(f"[idle_autonomy] recent thought save skipped: {type(exc).__name__}")
     payload = {
