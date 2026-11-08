@@ -273,13 +273,14 @@ body[data-theme="light"] .diary-input {
   box-shadow: 0 0 18px rgba(124,83,255,0.46), inset 0 1px 2px rgba(255,255,255,0.35);
 }
 </style>
+<link rel="stylesheet" href="/static/diary-paper.css?v=20261108">
 </head>
 <body data-theme="dark">
 <div class="sub-page">
   <div class="top-bar" style="position:relative">
     <button class="back-btn" onclick="navigateSubPageBack()">⬅</button>
-    <h2>📔 日记本</h2>
-    <button class="diary-add-btn" onclick="openDiaryModal()" title="写日记">＋</button>
+    <h2>日记本</h2>
+    <button class="diary-add-btn" onclick="openDiaryModal()" title="写日记" aria-label="写日记">＋</button>
   </div>
   <div class="diary-overlay" id="diaryOverlay" onclick="if(event.target===this)closeDiaryModal()">
     <div class="diary-modal">
@@ -294,6 +295,11 @@ body[data-theme="light"] .diary-input {
     </div>
   </div>
   <div class="page-content">
+    <section class="diary-intro" aria-label="日记介绍">
+      <div class="diary-kicker">日常 · 留存</div>
+      <h1>日常手记</h1>
+      <p>一些日常，一些想留下来的瞬间。</p>
+    </section>
     <div class="diary-tabs">
       <button class="diary-tab active" data-author="" onclick="switchAuthor('')">全部</button>
       <button class="diary-tab" data-author="user" id="userTab" onclick="switchAuthor('user')">我</button>
@@ -393,14 +399,22 @@ function renderList() {
     return;
   }
   let html = '';
+  let previousMonth = '';
   for (const item of allItems) {
     const id = String(item.id);
     const idAttr = escHtml(id);
     const expanded = expandedDiaryIds.has(id);
     const d = new Date(item.created_at * 1000);
+    const monthLabel = `${d.getFullYear()} 年 ${d.getMonth() + 1} 月`;
+    if (monthLabel !== previousMonth) {
+      html += `<div class="diary-month">${monthLabel}</div>`;
+      previousMonth = monthLabel;
+    }
     const timeStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
     const authorName = nameMap[item.author] || item.author;
     const title = item.title || '无题';
+    const plainContent = String(item.content || '').replace(/\s+/g, ' ').trim();
+    const preview = plainContent ? `<p class="diary-excerpt">${escHtml(plainContent.slice(0, 155))}${plainContent.length > 155 ? '…' : ''}</p>` : '';
     const mood = item.mood ? `<span class="diary-mood">${escHtml(item.mood)}</span>` : '';
     const source = formatSource(item);
     const ttsAction = item.author === 'user' ? '' :
@@ -417,6 +431,7 @@ function renderList() {
         ${mood}
       </div>
       <div class="diary-title">${escHtml(title)}</div>
+      ${preview}
       <div class="diary-body">
         <div class="diary-content markdown-body social-markdown">${renderMarkdownBody(item.content)}</div>
         ${source}
