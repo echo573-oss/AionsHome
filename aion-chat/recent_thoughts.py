@@ -228,7 +228,7 @@ async def _notify_main_memory(event_type: str, item: dict) -> None:
         pass
 
 
-async def _migrate_legacy_aion_thoughts(limit: int = 20) -> None:
+async def _migrate_legacy_aion_thoughts(limit: int = 2) -> None:
     """Lossless, repeatable migration; delete a legacy row only after the atom exists."""
     async with get_db() as db:
         db.row_factory = aiosqlite.Row
@@ -240,7 +240,7 @@ async def _migrate_legacy_aion_thoughts(limit: int = 20) -> None:
         rows = await (await db.execute(
             "SELECT id,content,source_action,source_ref,status,created_at "
             "FROM recent_thoughts WHERE actor='aion' ORDER BY created_at ASC LIMIT ?",
-            (max(1, min(20, limit)),)
+            (max(1, min(5, limit)),)
         )).fetchall()
     for row in rows:
         content = _normalize_thought(row["content"])
@@ -257,10 +257,10 @@ async def _migrate_legacy_aion_thoughts(limit: int = 20) -> None:
             vec = None
             if not exists:
                 from memory import get_embedding
-                vec = await get_embedding(content_text)
+                vec = await get_embedding(content_text, timeout=5)
             from memory import _pack_embedding
             when = float(row["created_at"])
-            state = "active" if row["status"] in ("active", "resting") else "cold"
+            state = "cold" if row["status"] == "archived" else "active"
             async with get_db() as db:
                 await db.execute(
                     "INSERT OR IGNORE INTO memories "
