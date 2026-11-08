@@ -134,7 +134,7 @@ def _load_config() -> dict:
     MCP_SERVERS_PATH.write_text(
         json.dumps(_DEFAULT_CONFIG, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    return dict(_DEFAULT_CONFIG)
+    return json.loads(json.dumps(_DEFAULT_CONFIG))
 
 
 def _save_config(cfg: dict):

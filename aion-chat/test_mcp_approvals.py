@@ -204,8 +204,9 @@ class WriteGrantConfigTests(unittest.TestCase):
 
     def test_grants_separate_by_role(self):
         self.manager.set_chat_write_tools("Vault", ["vault_create"], actor="aion")
-        self.assertEqual(self.manager.list_servers()[0]["chat_write_grants"]["aion"], ["vault_create"])
-        self.assertEqual(self.manager.list_servers()[0]["chat_write_grants"]["connor"], [])
+        vault = next(s for s in self.manager.list_servers() if s["name"] == "Vault")
+        self.assertEqual(vault["chat_write_grants"]["aion"], ["vault_create"])
+        self.assertEqual(vault["chat_write_grants"]["connor"], [])
 
     def test_destructive_tool_cannot_be_granted(self):
         with self.assertRaises(ValueError):
