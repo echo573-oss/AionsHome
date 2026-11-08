@@ -1154,7 +1154,7 @@ async def _generate_digest_diary(
             reason = "返回内容不是可解析的 JSON 对象"
         if data is not None:
             diary_entry, _ = normalize_diary_payload(data)
-            if not diary_entry.get("content"):
+            if not diary_entry.get("content") and data.get("write_diary") is not False:
                 reason = "日记正文为空"
             else:
                 return data, {
@@ -1478,14 +1478,16 @@ async def _do_digest(min_messages: int = 0, allow_ai_wishes: bool = False) -> di
                 f"你是{ai_name}。你刚刚整理了和{user_name}今天的聊天记忆，以下是你整理出的摘要：\n"
                 f"{summaries_text}\n\n"
                 f"【最近上下文】\n{context_text}\n\n"
-                f"请从你自己的视角写一篇私密日记，不是写给{user_name}看的聊天消息。"
-                f"日记可以记录你对这段记忆的感想，只写值得记录或有感触的事，不用每件事都提起，不要记流水账。语气必须符合你的人设。"
+                f"你可以自己决定要不要写一篇私密日记。只有确实有感触、自己想留下文字时才写，不用为了记忆总结凑篇数。"
+                f"日记是写给自己看的，不是给{user_name}的报告，不用记流水账。语气符合你的人设。"
+                f"如果不想写，write_diary=false，diary 的三个字段都留空；仍可独立选择朋友圈或礼物。"
                 f"你可以自行决定是否发布一次朋友圈，朋友圈不用每次都发，有想吐槽或者感慨，或者搞笑的事情，或者用朋友圈隔空向对方喊话。\n"
                 f"moment.expect_reply 表示发布朋友圈后是否希望另一个角色主动评论：true=希望对方回复，false=只发布、不触发回复；请根据朋友圈内容和你当下是否想与对方互动自行决定。\n"
                 f"你可以自行决定是否给{user_name}送一份图片小礼物。送礼应是更低概率的特殊事件，只在特殊日子，或聊天中确实有特别温馨、感动、有意义、值得纪念的内容时才送；不要为了完成任务而送礼，也不要用礼物重复日记或朋友圈已经表达的普通感想。\n"
                 f"givegift 为 true 时，gift.image_prompt 填写英文生图提示词，gift.message 填写符合你人设、自然真挚的赠言；为 false 时两项留空。\n\n"
                 f"直接输出JSON，不要解释，不要说话，不要输出 Markdown：\n"
                 f"{{\n"
+                f"  \"write_diary\": true,\n"
                 f"  \"diary\": {{\"title\": \"日记标题\", \"content\": \"日记正文\", \"mood\": \"此刻心情\"}},\n"
                 f"  \"post_moment\": false,\n"
                 f"  \"moment\": {{\"content\": \"朋友圈内容，post_moment 为 false 时留空\", \"expect_reply\": false}},\n"
@@ -1499,16 +1501,18 @@ async def _do_digest(min_messages: int = 0, allow_ai_wishes: bool = False) -> di
             from diary import normalize_diary_payload, publish_ai_moment, save_diary_entry
             if diary_data:
                 diary_entry, moment_entry = normalize_diary_payload(diary_data)
-                saved_diary = await save_diary_entry(
-                    author="aion",
-                    title=diary_entry.get("title", ""),
-                    content=diary_entry.get("content", ""),
-                    mood=diary_entry.get("mood", ""),
-                    source_type="memory_digest",
-                    source_ref=conv_id or "",
-                    source_start_ts=new_msgs[0]["created_at"],
-                    source_end_ts=new_msgs[-1]["created_at"],
-                )
+                saved_diary = None
+                if diary_data.get("write_diary") is not False and diary_entry.get("content"):
+                    saved_diary = await save_diary_entry(
+                        author="aion",
+                        title=diary_entry.get("title", ""),
+                        content=diary_entry.get("content", ""),
+                        mood=diary_entry.get("mood", ""),
+                        source_type="memory_digest",
+                        source_ref=conv_id or "",
+                        source_start_ts=new_msgs[0]["created_at"],
+                        source_end_ts=new_msgs[-1]["created_at"],
+                    )
                 diary_generation["diary_saved"] = bool(saved_diary)
                 if moment_entry and moment_entry.get("content"):
                     published_moment = await publish_ai_moment(
@@ -1524,7 +1528,7 @@ async def _do_digest(min_messages: int = 0, allow_ai_wishes: bool = False) -> di
                     await send_gift_from_decision(diary_data, sender="aion")
                 except Exception as e:
                     print(f"[digest] 执行送礼决定失败: {e}")
-                diary_generation["message"] = "日记已生成" + (
+                diary_generation["message"] = ("日记已生成" if saved_diary else "本次没有想写的日记") + (
                     "，并发布了朋友圈" if diary_generation["moment_published"] else "，本次未选择发布朋友圈"
                 )
         except Exception as e:

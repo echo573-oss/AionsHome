@@ -300,6 +300,17 @@ body[data-theme="light"] .diary-input {
       <h1>日常手记</h1>
       <p>一些日常，一些想留下来的瞬间。</p>
     </section>
+    <section class="recent-thoughts" aria-label="岚的近期想法">
+      <button type="button" class="recent-thoughts-toggle" id="recentThoughtsToggle"
+              onclick="toggleRecentThoughts()" aria-expanded="false" aria-controls="recentThoughtsBody">
+        <span>近期想法 <small id="recentThoughtCount"></small></span>
+        <span class="recent-thoughts-chevron" aria-hidden="true">⌄</span>
+      </button>
+      <div id="recentThoughtsBody" class="recent-thoughts-body" hidden>
+        <p class="recent-thoughts-note">岚在自主活动里想留下的念头。可以自己慢慢想，也可能在以后的聊天里自然提起。</p>
+        <div id="recentThoughtsList" class="recent-thoughts-list"></div>
+      </div>
+    </section>
     <div class="diary-tabs">
       <button class="diary-tab active" data-author="" onclick="switchAuthor('')">全部</button>
       <button class="diary-tab" data-author="user" id="userTab" onclick="switchAuthor('user')">我</button>
@@ -658,15 +669,71 @@ async function saveDiary() {
   }
 }
 
+const THOUGHT_ACTIONS = {
+  diary_browse: '翻旧日记', memory_browse: '翻旧记忆', home_dynamics: '查看家庭动态',
+  album_browse: '看相册', web_roam: '上网散步', xhs_roam: '逛小红书',
+  taobao_roam: '逛淘宝', wish_pool: '许愿池', friend_visit: '朋友串门',
+  board_check: '留言板', board_visit: '朋友留言板',
+};
+
+function toggleRecentThoughts() {
+  const toggle = document.getElementById('recentThoughtsToggle');
+  const body = document.getElementById('recentThoughtsBody');
+  const opening = body.hidden;
+  body.hidden = !opening;
+  toggle.setAttribute('aria-expanded', String(opening));
+  if (opening) loadRecentThoughts();
+}
+
+async function loadRecentThoughts() {
+  try {
+    const res = await api('GET', '/api/idle-autonomy/recent-thoughts?actor=aion&limit=30');
+    const items = (res.items || []).filter(item => item.status === 'active' || item.status === 'resting');
+    document.getElementById('recentThoughtCount').textContent = items.length ? String(items.length) : '';
+    const list = document.getElementById('recentThoughtsList');
+    if (!items.length) {
+      list.innerHTML = '<p class="recent-thoughts-empty">现在没有特别想留着的念头。</p>';
+      return;
+    }
+    list.innerHTML = items.map(item => {
+      const date = new Date(item.created_at * 1000).toLocaleDateString('zh-CN', {
+        year: 'numeric', month: 'short', day: 'numeric'
+      });
+      const source = THOUGHT_ACTIONS[item.source_action] || '自主活动';
+      return `<article class="recent-thought">
+        <div class="recent-thought-meta"><span>${escHtml(date)} · ${escHtml(source)}</span>
+          <button type="button" class="recent-thought-dismiss" data-thought-id="${escHtml(item.id)}"
+            aria-label="收起这条想法" title="收起这条想法">收起</button>
+        </div>
+        <p>${escHtml(item.content)}</p>
+      </article>`;
+    }).join('');
+    list.querySelectorAll('[data-thought-id]').forEach(btn => {
+      btn.addEventListener('click', () => dismissRecentThought(btn.dataset.thoughtId));
+    });
+  } catch (err) {
+    document.getElementById('recentThoughtsList').innerHTML =
+      '<p class="recent-thoughts-empty">近期想法暂时无法读取。</p>';
+  }
+}
+
+async function dismissRecentThought(id) {
+  try {
+    await api('DELETE', `/api/idle-autonomy/recent-thoughts/${encodeURIComponent(id)}?actor=aion`);
+    await loadRecentThoughts();
+  } catch (err) { showToast('收起失败'); }
+}
+
 function connectDiaryWS() {
   connectCommonWS(msg => {
     if (['diary_new', 'diary_updated', 'diary_deleted'].includes(msg.type)) loadDiaries();
-  }, { reconcile: () => loadDiaries() });
+    if (msg.type === 'recent_thoughts_changed' && msg.data?.actor === 'aion') loadRecentThoughts();
+  }, { reconcile: () => { loadDiaries(); loadRecentThoughts(); } });
 }
 
 (async function init() {
   await initNames();
-  await loadDiaries();
+  await Promise.all([loadDiaries(), loadRecentThoughts()]);
   connectDiaryWS();
 })();
 </script>

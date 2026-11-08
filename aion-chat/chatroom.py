@@ -988,14 +988,15 @@ async def digest_chatroom(room_id: str = None, model_key: str = None, allow_ai_w
                 f"你是{connor_name}。你刚刚整理了和{user_name}今天的聊天记忆，以下是你整理出的摘要：\n"
                 f"{summaries_text}\n\n"
                 f"【最近上下文】\n{context_text}\n\n"
-                f"请从你自己的视角写一篇私密日记，不是写给{user_name}看的聊天消息。"
-                f"日记可以记录你对这段记忆的感想，只写值得记录或有感触的事，不用每件事都提起，不要记流水账。语气必须符合你的人设。"
+                f"你可以自己决定是否写一篇私密日记。只有真想写时才写，不必为总结任务凑流水账。"
+                f"日记写给自己，不是写给{user_name}的报告。若不想写，write_diary=false，diary 字段留空。"
                 f"你可以自行决定是否发布一次朋友圈，朋友圈不用每次都发，有想吐槽或者感慨，或者搞笑的事情，或者用朋友圈隔空向对方喊话。\n"
                 f"moment.expect_reply 表示发布朋友圈后是否希望另一个角色主动评论：true=希望对方回复，false=只发布、不触发回复；请根据朋友圈内容和你当下是否想与对方互动自行决定。\n"
                 f"你可以自行决定是否给{user_name}送一份图片小礼物。送礼应是更低概率的特殊事件，只在特殊日子，或聊天中确实有特别温馨、感动、有意义、值得纪念的内容时才送；不要为了完成任务而送礼，也不要用礼物重复日记或朋友圈已经表达的普通感想。\n"
                 f"givegift 为 true 时，gift.image_prompt 填写英文生图提示词，gift.message 填写符合你人设、自然真挚的赠言；为 false 时两项留空。\n\n"
                 f"严格只输出 JSON，不要输出 Markdown，不要解释：\n"
                 f"{{\n"
+                f"  \"write_diary\": true,\n"
                 f"  \"diary\": {{\"title\": \"日记标题\", \"content\": \"日记正文\", \"mood\": \"此刻心情\"}},\n"
                 f"  \"post_moment\": false,\n"
                 f"  \"moment\": {{\"content\": \"朋友圈内容，post_moment 为 false 时留空\", \"expect_reply\": false}},\n"
@@ -1013,16 +1014,17 @@ async def digest_chatroom(room_id: str = None, model_key: str = None, allow_ai_w
             diary_data = parse_diary_payload(diary_text)
             if diary_data:
                 diary_entry, moment_entry = normalize_diary_payload(diary_data)
-                await save_diary_entry(
-                    author="connor",
-                    title=diary_entry.get("title", ""),
-                    content=diary_entry.get("content", ""),
-                    mood=diary_entry.get("mood", ""),
-                    source_type="chatroom_digest",
-                    source_ref=target_room_id or anchor_key,
-                    source_start_ts=msgs[0]["created_at"],
-                    source_end_ts=msgs[-1]["created_at"],
-                )
+                if diary_data.get("write_diary") is not False and diary_entry.get("content"):
+                    await save_diary_entry(
+                        author="connor",
+                        title=diary_entry.get("title", ""),
+                        content=diary_entry.get("content", ""),
+                        mood=diary_entry.get("mood", ""),
+                        source_type="chatroom_digest",
+                        source_ref=target_room_id or anchor_key,
+                        source_start_ts=msgs[0]["created_at"],
+                        source_end_ts=msgs[-1]["created_at"],
+                    )
                 if moment_entry and moment_entry.get("content"):
                     await publish_ai_moment(
                         author="connor",

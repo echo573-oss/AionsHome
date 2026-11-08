@@ -458,6 +458,98 @@ body[data-theme="dark"] .diary-input {
   .diary-overlay.show .diary-modal { transform: translateY(0); }
   .diary-textarea { min-height: 200px; }
 }
+/* A quiet, optional shelf for thoughts saved during self-directed activities. */
+.recent-thoughts {
+  flex: none;
+  border-bottom: 1px solid var(--diary-line);
+}
+.recent-thoughts-toggle {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 4px;
+  background: transparent;
+  border: 0;
+  color: var(--text2);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.recent-thoughts-toggle:hover { color: var(--accent); }
+.recent-thoughts-toggle small {
+  display: inline-block;
+  margin-left: 7px;
+  min-width: 19px;
+  text-align: center;
+  padding: 2px 5px;
+  background: var(--surface2);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--accent);
+}
+.recent-thoughts-toggle small:empty { display: none; }
+.recent-thoughts-chevron {
+  display: inline-block;
+  font-size: 19px;
+  font-weight: 400;
+  color: var(--text3);
+  transition: transform .2s;
+}
+.recent-thoughts-toggle[aria-expanded="true"] .recent-thoughts-chevron { transform: rotate(180deg); }
+.recent-thoughts-toggle:focus-visible,
+.recent-thought-dismiss:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.recent-thoughts-body { padding: 0 2px 17px; }
+.recent-thoughts-body[hidden] { display: none; }
+.recent-thoughts-note {
+  font-size: 12px;
+  color: var(--text3);
+  line-height: 1.75;
+  padding: 0 4px 12px;
+}
+.recent-thoughts-list {
+  overflow-y: auto;
+  max-height: 30dvh;
+  padding: 1px 4px 0;
+  scrollbar-width: thin;
+}
+.recent-thought {
+  background: var(--diary-card);
+  border: 1px solid var(--diary-line);
+  border-radius: 9px;
+  padding: 12px 13px;
+  margin: 0 0 9px;
+}
+.recent-thought-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text3);
+}
+.recent-thought-dismiss {
+  flex: none;
+  background: none;
+  border: 0;
+  color: var(--text3);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.recent-thought-dismiss:hover { background: var(--surface2); color: var(--accent); }
+.recent-thought p {
+  font-size: 13px;
+  line-height: 1.8;
+  margin: 7px 0 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.recent-thoughts-empty { padding: 14px 4px 20px; color: var(--text3); font-size: 12px; }
+
 @media (prefers-reduced-motion: reduce) {
   .diary-card, .diary-actions, .diary-add-btn, .diary-modal { transition: none; }
 }
