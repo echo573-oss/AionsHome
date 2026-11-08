@@ -4,7 +4,7 @@ MCP 连接管理器：管理多个 MCP Server 的连接生命周期
 """
 
 import asyncio
-import json, logging
+import json, logging, re
 from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any
@@ -106,6 +106,27 @@ def _save_config(cfg: dict):
     )
 
 
+_HEADER_NAME = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+
+
+def _validated_headers(headers: dict[str, str] | None) -> dict[str, str]:
+    """校验请求头，避免非法字段名或换行混入 HTTP 请求。"""
+    if headers is None:
+        return {}
+    if not isinstance(headers, dict) or len(headers) > 8:
+        raise ValueError("最多配置 8 个 MCP 请求头")
+    result = {}
+    for name, value in headers.items():
+        if not isinstance(name, str) or len(name) > 128 or not _HEADER_NAME.fullmatch(name):
+            raise ValueError("MCP 请求头名称无效")
+        if not isinstance(value, str) or not value or len(value) > 8192 or any(
+            char in value for char in "\r\n\x00"
+        ):
+            raise ValueError("MCP 请求头内容无效")
+        result[name] = value
+    return result
+
+
 class MCPManager:
     """管理所有 MCP Server 连接"""
 
@@ -124,6 +145,7 @@ class MCPManager:
                 "name": s["name"],
                 "type": s.get("type", "http"),
                 "url": s.get("url", ""),
+                "auth_configured": bool(s.get("headers")),
                 "enabled": s.get("enabled", True),
                 "connected": s["name"] in self._connections,
                 "tool_count": len(self._connections[s["name"]]["tools"]) if s["name"] in self._connections else 0,
@@ -354,8 +376,9 @@ class MCPManager:
         return conn["tools"] if conn else []
 
     # ── 服务器配置管理 ────────────────────
-    def add_server(self, name: str, srv_type: str, url: str) -> dict:
+    def add_server(self, name: str, srv_type: str, url: str, *, headers: dict[str, str] | None = None) -> dict:
         """添加一个新的 MCP Server 配置"""
+        checked_headers = _validated_headers(headers)
         cfg = _load_config()
         for s in cfg.get("servers", []):
             if s["name"] == name:
@@ -364,7 +387,7 @@ class MCPManager:
             "name": name,
             "type": srv_type,
             "url": url,
-            "headers": {},
+            "headers": checked_headers,
             "enabled": True,
         }
         cfg.setdefault("servers", []).append(new_server)

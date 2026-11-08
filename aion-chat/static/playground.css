@@ -638,3 +638,10 @@ body:not([data-theme="dark"]) .pg-manage-input option {
   transition: opacity 0.2s;
 }
 .pg-manage-add-btn:hover { opacity: 0.85; }
+
+/* MCP 添加表单里的认证提示 */
+.pg-auth-note {
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.58;
+}
