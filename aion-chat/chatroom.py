@@ -1017,14 +1017,14 @@ async def digest_chatroom(room_id: str = None, model_key: str = None, allow_ai_w
                 if diary_data.get("write_diary") is not False and diary_entry.get("content"):
                     await save_diary_entry(
                         author="connor",
-                    title=diary_entry.get("title", ""),
-                    content=diary_entry.get("content", ""),
-                    mood=diary_entry.get("mood", ""),
-                    source_type="chatroom_digest",
-                    source_ref=target_room_id or anchor_key,
-                    source_start_ts=msgs[0]["created_at"],
-                    source_end_ts=msgs[-1]["created_at"],
-                )
+                        title=diary_entry.get("title", ""),
+                        content=diary_entry.get("content", ""),
+                        mood=diary_entry.get("mood", ""),
+                        source_type="chatroom_digest",
+                        source_ref=target_room_id or anchor_key,
+                        source_start_ts=msgs[0]["created_at"],
+                        source_end_ts=msgs[-1]["created_at"],
+                    )
                 if moment_entry and moment_entry.get("content"):
                     await publish_ai_moment(
                         author="connor",
