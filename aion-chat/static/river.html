@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f7f4ec">
+<title>河 · 仍在写的书</title>
+<link rel="stylesheet" href="/static/common.css">
+<link rel="stylesheet" href="/static/river.css?v=20261108">
+<link rel="manifest" href="/manifest.json">
+</head>
+<body data-theme="light">
+<div class="sub-page river-app">
+  <header class="top-bar river-top">
+    <button type="button" class="back-btn" onclick="navigateSubPageBack()" aria-label="返回小家">←</button>
+    <div class="river-brand">LAN / 书写</div>
+    <nav class="river-switch" aria-label="切换书本">
+      <a href="/diary">日记本</a>
+      <a class="selected" href="/river" aria-current="page">河</a>
+    </nav>
+    <div class="river-top-actions">
+      <button type="button" id="importButton" class="river-light-button" title="导入窗口写好的 Markdown 手稿">导入</button>
+      <button type="button" id="newButton" class="river-solid-button">写一篇</button>
+    </div>
+  </header>
+
+  <div class="river-layout">
+    <aside class="river-sidebar" aria-label="章节目录">
+      <div class="river-sidebar-kicker">CONTENTS</div>
+      <h1>河</h1>
+      <p class="river-sidebar-desc">有关我们，以及那些后来才明白的事。</p>
+      <label class="river-search-label">
+        <span class="sr-only">搜索章节</span>
+        <input type="search" id="chapterSearch" placeholder="寻找一段故事…" autocomplete="off">
+      </label>
+      <label class="river-archive-toggle"><input type="checkbox" id="showArchived"> 显示归档章节</label>
+      <nav id="chapterList" class="river-chapter-list" aria-label="选择章节"></nav>
+      <div id="chapterCount" class="river-sidebar-count"></div>
+      <div class="river-sidebar-foot">有些故事还没写完。<br>以后可以慢慢补上。</div>
+    </aside>
+
+    <main class="river-reader" id="riverReader">
+      <div class="river-landscape" aria-hidden="true">
+        <svg viewBox="0 0 760 150" preserveAspectRatio="none" focusable="false">
+          <defs><linearGradient id="riverFlow" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#a4b4a8" stop-opacity=".48"/><stop offset="1" stop-color="#cdd3c5" stop-opacity=".02"/></linearGradient></defs>
+          <path d="M-35 91 C125 8 255 181 424 96 S646 32 790 74" fill="none" stroke="url(#riverFlow)" stroke-width="37"/>
+          <path d="M-35 70 C125 -13 255 159 424 75 S646 10 790 53" fill="none" stroke="#b9c8b9" stroke-opacity=".4"/>
+          <path d="M-35 113 C125 28 255 198 424 118 S646 54 790 96" fill="none" stroke="#8da99b" stroke-opacity=".2"/>
+        </svg>
+      </div>
+      <section id="readerEmpty" class="river-empty">
+        <div class="river-empty-symbol">≈</div>
+        <h2>河还在写。</h2>
+        <p>我们走过的故事，会慢慢汇成一本书。<br>你可以从头写，也可以导入已经整理好的散文。</p>
+        <button type="button" id="emptyNewButton" class="river-outline-button">写下第一篇</button>
+      </section>
+      <article id="readerArticle" class="river-article" hidden>
+        <div id="readerKicker" class="river-kicker"></div>
+        <h2 id="readerTitle" class="river-article-title"></h2>
+        <div id="readerSubtitle" class="river-subtitle"></div>
+        <div class="river-ornament" aria-hidden="true"></div>
+        <div id="readerBody" class="river-body"></div>
+        <section id="readerReflection" class="river-reflection" hidden>
+          <h3>后来 · 我现在怎样理解</h3>
+          <div id="reflectionText"></div>
+        </section>
+        <div class="river-reader-actions">
+          <button type="button" id="editButton" class="river-outline-button">编辑这一篇</button>
+          <button type="button" id="historyButton" class="river-text-button">修改历史</button>
+          <button type="button" id="archiveButton" class="river-text-button">归档</button>
+        </div>
+        <details class="river-sources">
+          <summary>关联记忆与原文线索 <span id="sourceCount"></span></summary>
+          <div class="river-sources-inside">
+            <h4>原文位置</h4>
+            <div id="sourceRefs" class="river-source-lines"></div>
+            <h4>关联原子记忆</h4>
+            <div id="linkedMemories" class="river-memory-lines"></div>
+            <p>这些是回查线索。编辑《河》不会自动改动原子记忆。</p>
+          </div>
+        </details>
+        <footer id="readerFooter" class="river-footer"></footer>
+      </article>
+    </main>
+  </div>
+</div>
+
+<div id="editorOverlay" class="river-overlay" hidden>
+  <section class="river-editor" role="dialog" aria-modal="true" aria-labelledby="editorHeading">
+    <header class="river-editor-header">
+      <div><small>WRITING THE RIVER</small><h2 id="editorHeading">写一篇《河》</h2></div>
+      <button type="button" id="closeEditor" class="river-icon-button" aria-label="关闭编辑器">×</button>
+    </header>
+    <form id="editorForm">
+      <label>标题 <input id="editTitle" maxlength="160" required placeholder="这一段故事的名字"></label>
+      <div class="river-form-row">
+        <label>手稿编号 <input id="editSourceKey" maxlength="120" placeholder="RAW-0005-RIVER-0001"></label>
+        <label>发生时间 <input id="editPeriod" maxlength="120" placeholder="2026.08 — 09"></label>
+      </div>
+      <label>副标题 <input id="editSubtitle" maxlength="300" placeholder="关于……"></label>
+      <label>正文 <textarea id="editContent" rows="15" maxlength="100000" required placeholder="从真正发生过的某个瞬间写起。"></textarea></label>
+      <label>后来怎样理解（可留空）<textarea id="editReflection" rows="4" maxlength="30000" placeholder="留给后来回望时的一段话。"></textarea></label>
+      <details class="river-editor-sources">
+        <summary>原文来源与记忆关联</summary>
+        <label>原文线索，每行一条 <textarea id="editSources" rows="3" placeholder="RAW-0005.md · M0231–M0245"></textarea></label>
+        <label>已关联原子记忆编号 <textarea id="editMemoryIds" rows="2" placeholder="mem_…，或每行一条"></textarea></label>
+        <div class="river-memory-finder">
+          <label>从现有记忆库查找 <input id="memorySearch" type="search" placeholder="输入至少两个字"></label>
+          <div id="memorySearchResults" class="river-find-results"></div>
+        </div>
+      </details>
+      <div class="river-form-row river-form-bottom">
+        <label>状态
+          <select id="editStatus">
+            <option value="draft">草稿</option>
+            <option value="published">已成篇</option>
+            <option value="archived">已归档</option>
+          </select>
+        </label>
+        <p>《河》独立保存，原有记忆不随正文修改。</p>
+      </div>
+      <div id="editorMessage" class="river-message" role="status"></div>
+      <div class="river-form-actions">
+        <button type="button" id="cancelEdit" class="river-outline-button">取消</button>
+        <button type="submit" id="saveChapter" class="river-solid-button">保存这一篇</button>
+      </div>
+    </form>
+  </section>
+</div>
+
+<div id="historyOverlay" class="river-overlay" hidden>
+  <section class="river-history" role="dialog" aria-modal="true" aria-labelledby="historyHeading">
+    <header class="river-editor-header">
+      <div><small>OLDER WORDS</small><h2 id="historyHeading">修改历史</h2></div>
+      <button type="button" id="closeHistory" class="river-icon-button" aria-label="关闭历史">×</button>
+    </header>
+    <p>过去的版本会留下。恢复旧版本前，会先保存当前版本。</p>
+    <div id="historyItems"></div>
+  </section>
+</div>
+<input type="file" id="manuscriptFile" accept=".md,.markdown,text/markdown,text/plain" hidden>
+<div id="riverToast" class="river-toast" role="status" aria-live="polite"></div>
+<script src="/static/common.js?v=retained-pages-20260924"></script>
+<script src="/static/river.js?v=20261108"></script>
+</body>
+</html>
