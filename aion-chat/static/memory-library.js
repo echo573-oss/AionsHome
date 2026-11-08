@@ -335,6 +335,7 @@
   document.querySelectorAll('[data-store]').forEach(b => b.onclick = () => {
     if (state.store === b.dataset.store) return;
     state.store = b.dataset.store;
+    if (state.store === 'chatroom' && state.filter === 'lan_thought') state.filter = 'all';
     params.set('store', state.store); history.replaceState(null, '', `${location.pathname}?${params}`);
     status(''); resetView();
   });
