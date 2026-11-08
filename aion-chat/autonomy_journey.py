@@ -95,6 +95,9 @@ async def run_web_journey(
             '{"decision":"FINISH","title":"卡片标题","reflection":"感想，可为空",'
             '"tags":["最多3个"],"image_prompt":"可选照片提示词",'
             '"share":false,"share_message":"若分享，只对用户说的一句话"}。'
+            "FINISH 收尾时，如果本次探索真有一条自己愿意长期记住、以后还想继续思考的念头，"
+            "可额外输出 recent_thought 字符串；没有就省略，CONTINUE 时无需提供。"
+            "这条想法只留给自己的记忆库，不是给用户看的汇报。"
             "照片和感想会私下收入你的壁龛；即使分享，也不要把照片发给用户。"
         )
         data = await ask_json(prompt)

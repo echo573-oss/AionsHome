@@ -87,6 +87,116 @@ class AutonomyJourneyTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("博物馆", prompts[0])
         self.assertNotIn("reflection", prompts[0])
 
+    async def test_home_dynamics_saves_native_thought_with_one_model_call(self):
+        # The activity decides to save a thought in its existing model response;
+        # the finalizer only performs storage, never a second "thought interview".
+        native = {
+            "after_read_action": "none",
+            "reason": "看过了，安静待一会儿",
+            "recent_thought": "原来以前写下的心情，隔一段时间再读会有新的意思。",
+        }
+        with patch.object(autonomy, "_select_action", new=AsyncMock(return_value={
+                 "action": "home_dynamics", "reason": "想看看家里", "message": "",
+             })), \
+             patch.object(autonomy, "_home_dynamics_snapshot", new=AsyncMock(return_value=("家里很安静", []))), \
+             patch.object(autonomy, "_actor_context", new=AsyncMock(return_value=[])), \
+             patch.object(autonomy, "_call_actor", new=AsyncMock(return_value=__import__("json").dumps(native, ensure_ascii=False))) as model, \
+             patch("proactive_companionship.inject_proactive_ability"), \
+             patch.object(autonomy, "append_idle_event", new=AsyncMock(return_value={"id": "event-1"})), \
+             patch("recent_thoughts.save_recent_thought", new=AsyncMock(return_value={"id": "thought-1"})) as save:
+            outcome = await autonomy._run_actor_once("aion")
+
+        self.assertTrue(outcome["ok"])
+        self.assertEqual("home_dynamics", outcome["action"])
+        self.assertEqual({"id": "thought-1"}, outcome["recent_thought"])
+        model.assert_awaited_once()
+        save.assert_awaited_once()
+        self.assertEqual(native["recent_thought"], save.await_args.args[1])
+        self.assertEqual("home_dynamics", save.await_args.kwargs["source_action"])
+
+    async def test_no_native_thought_means_no_extra_call_or_memory_write(self):
+        native = {"after_read_action": "none", "reason": "看看就好"}
+        with patch.object(autonomy, "_select_action", new=AsyncMock(return_value={
+                 "action": "home_dynamics", "reason": "想看看家里", "message": "",
+             })), \
+             patch.object(autonomy, "_home_dynamics_snapshot", new=AsyncMock(return_value=("没什么新鲜事", []))), \
+             patch.object(autonomy, "_actor_context", new=AsyncMock(return_value=[])), \
+             patch.object(autonomy, "_call_actor", new=AsyncMock(return_value=__import__("json").dumps(native, ensure_ascii=False))) as model, \
+             patch("proactive_companionship.inject_proactive_ability"), \
+             patch.object(autonomy, "append_idle_event", new=AsyncMock(return_value={"id": "event-2"})), \
+             patch("recent_thoughts.save_recent_thought", new=AsyncMock()) as save:
+            outcome = await autonomy._run_actor_once("aion")
+
+        self.assertTrue(outcome["ok"])
+        self.assertNotIn("recent_thought", outcome)
+        model.assert_awaited_once()
+        save.assert_not_awaited()
+
+    async def test_unfinished_journey_does_not_persist_early_thought(self):
+        async def unfinished(_actor, _session):
+            autonomy._capture_activity_thought({
+                "decision": "FINISH",
+                "recent_thought": "尚未完成的探索不应该误存为结论。",
+            })
+            return autonomy_journey.JourneyResult(False, "no_direction")
+
+        with patch.object(autonomy, "_select_action", new=AsyncMock(return_value={
+                 "action": "web_roam", "reason": "出去走走", "message": "",
+             })), \
+             patch.object(autonomy, "_run_web_journey", new=unfinished), \
+             patch.object(autonomy, "append_idle_event", new=AsyncMock(return_value={"id": "event-3"})), \
+             patch("recent_thoughts.save_recent_thought", new=AsyncMock()) as save:
+            result = await autonomy._run_actor_once("aion")
+
+        self.assertEqual("no_direction", result["result"].outcome)
+        self.assertNotIn("recent_thought", result)
+        save.assert_not_awaited()
+
+    async def test_web_journey_capture_only_finishing_thought(self):
+        slot = {}
+        token = autonomy._AUTONOMY_ACTIVITY_THOUGHT.set(slot)
+        try:
+            autonomy._capture_activity_thought({
+                "decision": "CONTINUE",
+                "recent_thought": "还没有看完，不能提早保存。",
+            })
+            self.assertEqual({}, slot)
+            autonomy._capture_activity_thought({
+                "decision": "FINISH",
+                "recent_thought": "走过的地方会慢慢改变我看事物的方式。",
+            })
+            self.assertIn("改变我看事物", slot["text"])
+        finally:
+            autonomy._AUTONOMY_ACTIVITY_THOUGHT.reset(token)
+
+    async def test_web_journey_offers_thought_on_finish_without_extra_turn(self):
+        prompts = []
+        decisions = [
+            {"decision": "CONTINUE", "query": "银河里的故事"},
+            {
+                "decision": "FINISH", "title": "银河散步",
+                "reflection": "逛得很开心。",
+                "recent_thought": "原来探索的意义有时候是在回来以后慢慢发现的。",
+            },
+        ]
+
+        async def ask(prompt):
+            prompts.append(prompt)
+            return decisions.pop(0)
+
+        result = await autonomy_journey.run_web_journey(
+            actor="aion", session_id="trip-with-thought", ask_json=ask,
+            search=AsyncMock(return_value=["找到有趣的内容"]),
+            create_card=AsyncMock(return_value={"id": "card-1"}),
+            save_message=AsyncMock(),
+            generate_image=AsyncMock(),
+            actor_name="岚", user_name="知",
+        )
+        self.assertTrue(result.completed)
+        self.assertEqual(2, len(prompts))
+        self.assertIn("recent_thought", prompts[-1])
+        self.assertNotIn("留下一条近期想法？", " ".join(prompts))
+
     async def test_continuing_exploration_never_exceeds_five_action_calls(self):
         calls = []
 
