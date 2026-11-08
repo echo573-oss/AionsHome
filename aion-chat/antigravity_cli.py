@@ -85,12 +85,16 @@ def prepare_chat_workspace(workspace=CHAT_WORKSPACE, *, vision=False):
     return workspace
 
 
-def build_chat_command(binary, model, timeout='10m', *, agent=AGENT_NAME):
+def build_chat_command(binary, model, timeout='10m', *, agent=AGENT_NAME, effort=None):
     command = [binary, '--agent', agent,
                '--input-format', 'stream-json', '--output-format', 'stream-json',
                '--disable-slash-commands', '--print-timeout', timeout]
     if model:
         command += ['--model', model]
+    if effort and str(effort).strip().lower() in {'low', 'medium', 'high', 'xhigh', 'max'}:
+        effort_val = str(effort).strip().lower()
+        if not (model and re.search(r'-(low|medium|high|xhigh|max)$', str(model).strip().lower())):
+            command += ['--effort', effort_val]
     return command
 
 
@@ -203,7 +207,7 @@ def _stage_image(source, target):
     return target
 
 
-async def stream_chat(binary, prompt, model, workspace=CHAT_WORKSPACE, timeout='10m', *, image_paths=(), audio_paths=()):
+async def stream_chat(binary, prompt, model, workspace=CHAT_WORKSPACE, timeout='10m', *, image_paths=(), audio_paths=(), effort=None):
     """Stage attachments in the sole read-allowed directory for this turn."""
     from config import antigravity_model_supports_audio
 
@@ -213,7 +217,7 @@ async def stream_chat(binary, prompt, model, workspace=CHAT_WORKSPACE, timeout='
     require_chat_permissions()
     prepare_chat_workspace(workspace, vision=bool(image_paths or audio_paths))
     if not image_paths and not audio_paths:
-        async for event in _stream_chat(binary, prompt, model, workspace, timeout):
+        async for event in _stream_chat(binary, prompt, model, workspace, timeout, effort=effort):
             yield event
         return
     images_directory.mkdir(parents=True, exist_ok=True)
@@ -237,11 +241,11 @@ async def stream_chat(binary, prompt, model, workspace=CHAT_WORKSPACE, timeout='
                   'Do not include internal file paths or file links in your reply.\n'
                   + attachment_list + '\n\n' + prompt)
         async for event in _stream_chat(binary, prompt, model, workspace, timeout,
-                                       agent=VISION_AGENT_NAME, attachment_paths=tuple(staged)):
+                                       agent=VISION_AGENT_NAME, attachment_paths=tuple(staged), effort=effort):
             yield event
 
 
-async def _stream_chat(binary, prompt, model, workspace, timeout, *, agent=AGENT_NAME, attachment_paths=()):
+async def _stream_chat(binary, prompt, model, workspace, timeout, *, agent=AGENT_NAME, attachment_paths=(), effort=None):
     """Yield visible deltas and usage; never recover replies from private databases."""
     from generation_control import own_process, terminate_process_tree
 
@@ -258,7 +262,7 @@ async def _stream_chat(binary, prompt, model, workspace, timeout, *, agent=AGENT
             from system_logs import record_cli_prompt
             await record_cli_prompt(prompt, instructions_file=Path(workspace) / '.agents' / 'agents' / f'{agent}.md')
             process = own_process(await asyncio.create_subprocess_exec(
-                *build_chat_command(binary, model, timeout, agent=agent), cwd=str(workspace),
+                *build_chat_command(binary, model, timeout, agent=agent, effort=effort), cwd=str(workspace),
                 stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE, limit=8 * 1024 * 1024,
                 env=_cli_env(), **_process_options(),
@@ -266,71 +270,74 @@ async def _stream_chat(binary, prompt, model, workspace, timeout, *, agent=AGENT
             stderr_task = asyncio.create_task(_read_stderr(process.stderr))
             async with asyncio.timeout(_timeout_seconds(timeout) + 30):
                 payload = {'event': 'user', 'message': {'content': prompt}}
-                process.stdin.write((json.dumps(payload, ensure_ascii=False) + '\n').encode('utf-8'))
-                await process.stdin.drain()
-                process.stdin.close()
-                await process.stdin.wait_closed()
-                async for line in process.stdout:
-                    if not line.strip():
-                        continue
-                    try:
-                        event = json.loads(line)
-                    except ValueError as exc:
-                        raise AntigravityError('AGY 输出不是官方 stream-json 格式，请检查版本和登录状态') from exc
-                    kind = event.get('event')
-                    if kind == 'init':
-                        config = event.get('init', {})
-                        if config.get('agent') != agent:
-                            raise AntigravityError('AGY 陪伴配置未生效，已停止本次调用')
-                        initialized = True
-                        # 1.2.16 advertises the global tool registry here, even with
-                        # excludeDefaultComponents enabled; it is not the agent's toolset.
-                        yield {'kind': 'activity'}
-                    elif kind == 'step_update':
-                        step = event.get('step_update', {})
-                        if step.get('subagent_info'):
-                            raise AntigravityError('AGY 陪伴模式出现原生工具调用，已停止：' + step.get('tool_name', 'unknown'))
-                        if step.get('step_type') == 'tool' or step.get('tool_info'):
-                            info = step.get('tool_info') or {}
-                            name = step.get('tool_name') or info.get('name')
-                            path = (info.get('parameters') or {}).get('AbsolutePath', '')
-                            allowed = {os.path.normcase(str(Path(item).resolve())) for item in attachment_paths}
-                            if name != 'view_file' or not path or os.path.normcase(str(Path(path).resolve())) not in allowed:
-                                raise AntigravityError('AGY 陪伴模式出现未授权的原生工具调用，已停止：' + (name or 'unknown'))
-                            if info.get('error'):
-                                raise AntigravityError('AGY 附件读取失败：' + str(info['error'].get('message', info['error'])))
-                            yield {'kind': 'activity'}
+                try:
+                    process.stdin.write((json.dumps(payload, ensure_ascii=False) + '\n').encode('utf-8'))
+                    await process.stdin.drain()
+                    process.stdin.close()
+                    await process.stdin.wait_closed()
+                    async for line in process.stdout:
+                        if not line.strip():
                             continue
-                        if step.get('step_type') == 'agent_response' and initialized:
-                            text = step.get('text_delta') or ''
-                            if text:
-                                visible += text
-                                yield {'kind': 'text', 'text': text}
+                        try:
+                            event = json.loads(line)
+                        except ValueError as exc:
+                            raise AntigravityError('AGY 输出不是官方 stream-json 格式，请检查版本和登录状态') from exc
+                        kind = event.get('event')
+                        if kind == 'init':
+                            config = event.get('init', {})
+                            if config.get('agent') != agent:
+                                raise AntigravityError('AGY 陪伴配置未生效，已停止本次调用')
+                            initialized = True
+                            # 1.2.16 advertises the global tool registry here, even with
+                            # excludeDefaultComponents enabled; it is not the agent's toolset.
+                            yield {'kind': 'activity'}
+                        elif kind == 'step_update':
+                            step = event.get('step_update', {})
+                            if step.get('subagent_info'):
+                                raise AntigravityError('AGY 陪伴模式出现原生工具调用，已停止：' + step.get('tool_name', 'unknown'))
+                            if step.get('step_type') == 'tool' or step.get('tool_info'):
+                                info = step.get('tool_info') or {}
+                                name = step.get('tool_name') or info.get('name')
+                                path = (info.get('parameters') or {}).get('AbsolutePath', '')
+                                allowed = {os.path.normcase(str(Path(item).resolve())) for item in attachment_paths}
+                                if name != 'view_file' or not path or os.path.normcase(str(Path(path).resolve())) not in allowed:
+                                    raise AntigravityError('AGY 陪伴模式出现未授权的原生工具调用，已停止：' + (name or 'unknown'))
+                                if info.get('error'):
+                                    raise AntigravityError('AGY 附件读取失败：' + str(info['error'].get('message', info['error'])))
+                                yield {'kind': 'activity'}
+                                continue
+                            if step.get('step_type') == 'agent_response' and initialized:
+                                text = step.get('text_delta') or ''
+                                if text:
+                                    visible += text
+                                    yield {'kind': 'text', 'text': text}
+                                else:
+                                    yield {'kind': 'activity'}
                             else:
                                 yield {'kind': 'activity'}
-                        else:
-                            yield {'kind': 'activity'}
-                    elif kind == 'result':
-                        final = event.get('result', {})
-                        if final.get('status') != 'SUCCESS':
-                            raise AntigravityError(final.get('error') or f"AGY 调用结束：{final.get('status', 'UNKNOWN')}")
-                        if not initialized:
-                            raise AntigravityError('AGY 缺少初始化事件，无法确认陪伴模式')
-                        response = final.get('response') or ''
-                        if response.startswith(visible):
-                            tail = response[len(visible):]
-                            if tail:
-                                visible += tail
-                                yield {'kind': 'text', 'text': tail}
-                        elif response != visible:
-                            raise AntigravityError('AGY 流式正文与最终回复不一致')
-                        if not visible:
-                            raise AntigravityError('AGY 未收到完整回复，请检查登录、额度和网络')
-                        # The official result completes this turn. CLI shutdown and
-                        # pipe EOF may lag behind; cleanup below owns the process.
-                        yield {'kind': 'completed', 'usage': final.get('usage', {}),
-                               'conversation_id': final.get('conversation_id', '')}
-                        return
+                        elif kind == 'result':
+                            final = event.get('result', {})
+                            if final.get('status') != 'SUCCESS':
+                                raise AntigravityError(final.get('error') or f"AGY 调用结束：{final.get('status', 'UNKNOWN')}")
+                            if not initialized:
+                                raise AntigravityError('AGY 缺少初始化事件，无法确认陪伴模式')
+                            response = final.get('response') or ''
+                            if response.startswith(visible):
+                                tail = response[len(visible):]
+                                if tail:
+                                    visible += tail
+                                    yield {'kind': 'text', 'text': tail}
+                            elif response != visible:
+                                raise AntigravityError('AGY 流式正文与最终回复不一致')
+                            if not visible:
+                                raise AntigravityError('AGY 未收到完整回复，请检查登录、额度和网络')
+                            # The official result completes this turn. CLI shutdown and
+                            # pipe EOF may lag behind; cleanup below owns the process.
+                            yield {'kind': 'completed', 'usage': final.get('usage', {}),
+                                   'conversation_id': final.get('conversation_id', '')}
+                            return
+                except (BrokenPipeError, OSError):
+                    pass
                 await process.wait()
                 stderr = await stderr_task
                 if process.returncode or final is None or not visible:

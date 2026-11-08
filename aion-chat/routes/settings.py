@@ -92,6 +92,8 @@ class SettingsUpdate(BaseModel):
     luckin_default_shop_keyword: Optional[str] = None
     custom_model_routes: Optional[list[Dict[str, Any]]] = None
     model_transport_modes: Optional[Dict[str, str]] = None
+    codex_instructions_enabled: Optional[bool] = None
+    codex_instructions_path: Optional[str] = None
 
 class HomeLayoutUpdate(BaseModel):
     version: Optional[int] = 2
@@ -184,6 +186,8 @@ async def get_settings():
         "netease_music_u_masked": mask(SETTINGS.get("netease_music_u", "")),
         "sentinel_api_key_masked": mask(SETTINGS.get("sentinel_api_key", "")),
         "embedding_api_key_masked": mask(SETTINGS.get("embedding_api_key", "")),
+        "codex_instructions_enabled": bool(SETTINGS.get("codex_instructions_enabled", True)),
+        "codex_instructions_path": str(SETTINGS.get("codex_instructions_path", "") or ""),
     }
 
 @router.put("/api/settings")
@@ -287,6 +291,10 @@ async def update_settings(body: SettingsUpdate):
     if body.custom_model_routes is not None:
         SETTINGS["custom_model_routes"] = normalize_custom_model_routes(body.custom_model_routes)
         refresh_custom_models()
+    if body.codex_instructions_enabled is not None:
+        SETTINGS["codex_instructions_enabled"] = bool(body.codex_instructions_enabled)
+    if body.codex_instructions_path is not None:
+        SETTINGS["codex_instructions_path"] = body.codex_instructions_path.strip()
     if body.model_transport_modes is not None:
         SETTINGS["model_transport_modes"] = normalize_model_transport_modes(body.model_transport_modes)
     if body.netease_music_u is not None:
@@ -327,10 +335,10 @@ async def update_temperature(body: TempUpdate):
 
 @router.put("/api/settings/siwc_reasoning_effort")
 async def update_siwc_reasoning_effort(body: SiwcEffortUpdate):
-    allowed = {"", "default", "none", "minimal", "low", "medium", "high", "xhigh"}
+    allowed = {"low", "medium", "high", "xhigh"}
     effort = (body.reasoning_effort or "").strip().lower()
     if effort not in allowed:
-        raise HTTPException(400, f"unsupported reasoning_effort: {effort}")
+        effort = "medium"
     SETTINGS["siwc_reasoning_effort"] = effort
     save_settings(SETTINGS)
     return {"ok": True, "siwc_reasoning_effort": effort}

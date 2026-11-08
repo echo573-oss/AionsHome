@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#ff8359">
-<link rel="stylesheet" href="/static/chat.css?v=20261107-sidebar-toggle">
+<link rel="stylesheet" href="/static/chat.css?v=20261107-reading-comfort">
 <link rel="stylesheet" href="/static/ai-message-editor.css?v=20260920">
 <link rel="stylesheet" href="/static/pat.css?v=inline-order-20260910">
 <link rel="stylesheet" href="/static/rps.css?v=20261019-rps-summary">
@@ -21,7 +21,7 @@
 <link rel="stylesheet" href="/static/image-viewer.css?v=20261104-ai-photo">
 <script src="/static/image-viewer.js?v=20261024"></script>
 <link rel="stylesheet" href="/static/local-voice.css?v=20261024">
-<link rel="stylesheet" href="/static/chat-day-glass.css?v=20261107-bubbles-55">
+<link rel="stylesheet" href="/static/chat-day-glass.css?v=20261107-rounded-bubbles">
 </head>
 <body data-theme="dark">
 
@@ -175,15 +175,12 @@
         <input type="range" id="contextSlider" min="1" max="100" value="30" oninput="document.getElementById('contextValue').textContent=this.value+'条'; localStorage.setItem('aion_context_limit', this.value)">
         <span class="slider-val" id="contextValue">30条</span>
       </div>
-      <label id="siwcEffortLabel">推理强度（ChatGPT）</label>
+      <label id="siwcEffortLabel">推理强度</label>
       <select id="siwcEffortSelect" onchange="syncSiwcEffort()" style="width:100%;margin-bottom:10px">
-        <option value="default">默认（不传）</option>
         <option value="low">低</option>
         <option value="medium" selected>中</option>
         <option value="high">高</option>
         <option value="xhigh">更高</option>
-        <option value="minimal">极低</option>
-        <option value="none">无</option>
       </select>
       <label for="tempSlider">模型温度</label>
       <p class="config-setting-hint" id="temperatureHint">仅部分功能和模型线路使用。普通聊天与 SIWC 线路不会使用此值。</p>
@@ -295,7 +292,7 @@
         </div>
         <input type="file" id="fileInput" accept="image/*,video/*" multiple style="display:none" onchange="handleFileSelect(this)">
         <textarea id="input" rows="1" placeholder="输入消息..." onkeydown="handleKey(event)" oninput="autoResize(this); _updateSendBtnState()"></textarea>
-        <button class="send-btn" id="sendBtn" onclick="handleSendBtn()" disabled>➤</button>
+        <button class="send-btn" id="sendBtn" aria-label="发送" onclick="handleSendBtn()" disabled>➤</button>
       </div>
       <div class="voice-mode-row" id="voiceModeRow">
         <button class="voice-kbd-btn" onclick="toggleVoiceMode()" title="切换键盘">⌨</button>
@@ -510,7 +507,7 @@ window.AionSubPageNavigation = (() => {
 <script src="/static/native-message-sync.js?v=20261030-weak-network"></script>
 <link rel="stylesheet" href="/static/kitchen-cards.css?v=20261103-lookup2">
 <script src="/static/kitchen-cards.js?v=20261103-lookup3"></script>
-<script src="/static/chat.js?v=20261107-sidebar-toggle"></script>
+<script src="/static/chat.js?v=20261107-action-text"></script>
 <script src="/static/voice-call-policy.js?v=voice-latency-20260902a"></script>
 <script src="/static/voice-call.js?v=voice-latency-20260902a"></script>
 

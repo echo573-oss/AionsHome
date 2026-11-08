@@ -71,6 +71,20 @@ class CodexCliMinimalModeTests(unittest.TestCase):
         self.assertNotIn("--search", command)
         self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", command)
 
+    def test_chat_command_reasoning_effort_mapping(self):
+        for effort_in, expected in [
+            ("low", "low"),
+            ("medium", "medium"),
+            ("high", "high"),
+            ("xhigh", "high"),
+            ("invalid", "medium"),
+        ]:
+            with self.subTest(effort_in=effort_in):
+                cmd = ai_providers._build_codex_chat_command(
+                    "node", "codex.js", "workspace", "gpt-5.6-sol", reasoning_effort=effort_in
+                )
+                self.assertIn(f'model_reasoning_effort="{expected}"', cmd)
+
     def test_chat_command_grants_companion_capabilities_at_developer_priority(self):
         command = ai_providers._build_codex_chat_command(
             "node",

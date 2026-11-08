@@ -167,8 +167,13 @@ async function init() {
   // 恢复温度设置
   const savedTemp = localStorage.getItem('aion_temperature');
   const savedSiwcEffort = localStorage.getItem('aion_siwc_reasoning_effort');
-  if (savedSiwcEffort && document.getElementById('siwcEffortSelect')) {
-    document.getElementById('siwcEffortSelect').value = savedSiwcEffort;
+  const effortSelect = document.getElementById('siwcEffortSelect');
+  if (effortSelect) {
+    if (savedSiwcEffort && ['low', 'medium', 'high', 'xhigh'].includes(savedSiwcEffort)) {
+      effortSelect.value = savedSiwcEffort;
+    } else {
+      effortSelect.value = 'medium';
+    }
   }
   if (savedTemp) { $("tempSlider").value = savedTemp; $("tempValue").textContent = savedTemp; }
   // 恢复最大回复长度设置
@@ -428,7 +433,7 @@ async function rerollIntimacyPreview() {
 async function syncSiwcEffort() {
   const el = document.getElementById("siwcEffortSelect");
   if (!el) return;
-  const v = el.value || "default";
+  const v = el.value || "medium";
   localStorage.setItem("aion_siwc_reasoning_effort", v);
   try {
     await api("PUT", "/api/settings/siwc_reasoning_effort", { reasoning_effort: v });
@@ -2035,6 +2040,7 @@ function renderConvList() {
 
 function privateSystemMessageHTML(m, nextMessage = null) {
   const pat = window.AionPat?.isPat(m);
+  const aionAction = pat && m.attachments.some(item => item?.type === 'pat' && item.actor === 'aion');
   const loungeStatus = window.LoungeVisitUI && window.LoungeVisitUI.isStatusMessage(m);
   const afterMsgId = systemNoticeAfterMsgId(m);
   const beforeMsgId = systemNoticeBeforeMsgId(m, nextMessage);
@@ -2052,7 +2058,7 @@ function privateSystemMessageHTML(m, nextMessage = null) {
         },
       )
     : "";
-  const contentHtml = window.AionRps?.inviteHTML(m) || (pat ? `<span class="pat-text">${escHtml(m.content || '')}</span>` : snapshotHtml || (window.SystemNoticeUI
+  const contentHtml = window.AionRps?.inviteHTML(m) || (pat ? `<span class="pat-text${aionAction ? ' pat-aion-text' : ''}">${escHtml(m.content || '')}</span>` : snapshotHtml || (window.SystemNoticeUI
     ? window.SystemNoticeUI.renderSystemNoticeContent(displayContent, {escapeHtml: escHtml, attachments: m.attachments})
     : `<span class="system-notice-text">${escHtml(displayContent)}</span>`));
   return `

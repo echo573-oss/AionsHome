@@ -693,6 +693,30 @@ body[data-theme="light"] .transport-mode-btn.is-active {
       </div>
     </details>
 
+    <details class="settings-card" open>
+      <summary>
+        <div class="summary-title">
+          <strong>📝 本地个性化通用指令</strong>
+          <span>读取本机 Codex 基础指令（base-instructions.md），作为首层底色设定</span>
+        </div>
+        <span class="summary-chevron">▾</span>
+      </summary>
+      <div class="card-body">
+        <div class="field full">
+          <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="codexInstructionsEnabledInput" checked>
+            <span>启用本地个性化通用指令（先读本地底色设定，再读 Aion 人设 Prompt）</span>
+          </label>
+        </div>
+        <div class="field full">
+          <label class="form-label" for="codexInstructionsPathInput">自定义指令文件路径（可选）</label>
+          <input class="form-input mono-input" type="text" id="codexInstructionsPathInput" placeholder="留空则自动读取 ~/.codex/config.toml 中的 model_instructions_file" autocomplete="off">
+          <p class="hint">留空时自动检测本机 <code>~/.codex/config.toml</code> 配置的 <code>model_instructions_file</code>（或 <code>~/.codex/base-instructions.md</code>）。每次请求动态读取，修改即时生效。</p>
+        </div>
+      </div>
+    </details>
+
+
     <details class="settings-card">
       <summary>
         <div class="summary-title">
@@ -1362,6 +1386,8 @@ async function siwcContinueWithChatGPT() {
   $("minimaxConnorVoiceLabel").textContent = (s.minimax_connor_name || "第二 AI") + " 的克隆音色 ID";
   $("tavilyApiKeyInput").value = s.tavily_api_key || "";
   $("neteaseMusicUInput").value = s.netease_music_u || "";
+  $("codexInstructionsEnabledInput").checked = s.codex_instructions_enabled !== false;
+  $("codexInstructionsPathInput").value = s.codex_instructions_path || "";
   $("luckinMcpEnabledInput").checked = !!s.luckin_mcp_enabled;
   $("luckinMcpTokenInput").value = s.luckin_mcp_token || "";
   $("luckinLongitudeInput").value = s.luckin_default_longitude || "";
@@ -1469,6 +1495,8 @@ async function saveSettings() {
     minimax_connor_voice_id: $("minimaxConnorVoiceInput").value.trim(),
     tavily_api_key: $("tavilyApiKeyInput").value.trim(),
     netease_music_u: $("neteaseMusicUInput").value.trim(),
+    codex_instructions_enabled: $("codexInstructionsEnabledInput").checked,
+    codex_instructions_path: $("codexInstructionsPathInput").value.trim(),
     luckin_mcp_enabled: $("luckinMcpEnabledInput").checked,
     luckin_mcp_token: $("luckinMcpTokenInput").value.trim(),
     luckin_default_longitude: $("luckinLongitudeInput").value.trim(),

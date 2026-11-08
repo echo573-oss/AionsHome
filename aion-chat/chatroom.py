@@ -9,7 +9,7 @@ from pathlib import Path
 
 import aiosqlite, httpx
 
-from config import DATA_DIR, DEFAULT_MODEL, MODELS, load_worldbook
+from config import DATA_DIR, DEFAULT_MODEL, MODELS, load_worldbook, load_codex_custom_instructions, CODEX_INSTRUCTIONS_HEADER
 from database import get_db
 from model_json import extract_json_object
 from memory import (
@@ -1147,6 +1147,9 @@ async def build_aion_group_context(
     # 0. 注入世界书（和主聊天一致的人设）
     wb = load_worldbook()
     user_name, ai_name, connor_name = get_chatroom_names()
+    local_inst = load_codex_custom_instructions()
+    if local_inst:
+        history.append({"role": "system", "content": f"{CODEX_INSTRUCTIONS_HEADER}\n{local_inst}"})
     if wb.get("ai_persona"):
         history.append({"role": "system", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
     if wb.get("user_persona"):

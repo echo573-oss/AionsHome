@@ -16,7 +16,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from config import DEFAULT_MODEL, DATA_DIR, CODEX_UPLOADS_DIR, ALBUM_IMAGES_DIR, MODELS, SETTINGS, get_sentinel_config, resolve_model_key, resolve_model_transport_mode
+from config import DEFAULT_MODEL, DATA_DIR, CODEX_UPLOADS_DIR, ALBUM_IMAGES_DIR, MODELS, SETTINGS, get_sentinel_config, resolve_model_key, resolve_model_transport_mode, load_codex_custom_instructions, CODEX_INSTRUCTIONS_HEADER
 from database import get_db
 from ws import manager
 from system_logs import emit_chat_debug
@@ -1490,6 +1490,10 @@ async def _chatroom_cam_check(
         cam_prompt += image_result.no_image_context
 
     prefix_msgs = []
+    if sender == "aion":
+        local_inst = load_codex_custom_instructions()
+        if local_inst:
+            prefix_msgs.append({"role": "system", "content": f"{CODEX_INSTRUCTIONS_HEADER}\n{local_inst}"})
     if wb.get("ai_persona") and sender == "aion":
         prefix_msgs.append({"role": "system", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
     if wb.get("user_persona"):
@@ -1566,6 +1570,10 @@ async def _chatroom_activity_check(room_id: str, sender: str, model_key: str, n:
 
     # 构建 prompt
     prefix_msgs = []
+    if sender == "aion":
+        local_inst = load_codex_custom_instructions()
+        if local_inst:
+            prefix_msgs.append({"role": "system", "content": f"{CODEX_INSTRUCTIONS_HEADER}\n{local_inst}"})
     if wb.get("ai_persona") and sender == "aion":
         prefix_msgs.append({"role": "system", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
     if wb.get("user_persona"):
@@ -1686,6 +1694,10 @@ async def _chatroom_poi_check(room_id: str, sender: str, model_key: str, categor
     recent = _render_recent_room_messages_for_ai(msgs)
 
     prefix_msgs = []
+    if sender == "aion":
+        local_inst = load_codex_custom_instructions()
+        if local_inst:
+            prefix_msgs.append({"role": "system", "content": f"{CODEX_INSTRUCTIONS_HEADER}\n{local_inst}"})
     if wb.get("ai_persona") and sender == "aion":
         prefix_msgs.append({"role": "system", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
 
@@ -1755,6 +1767,10 @@ async def _chatroom_web_search(room_id: str, sender: str, model_key: str, payloa
     recent = _render_recent_room_messages_for_ai(msgs)
 
     prefix_msgs = []
+    if sender == "aion":
+        local_inst = load_codex_custom_instructions()
+        if local_inst:
+            prefix_msgs.append({"role": "system", "content": f"{CODEX_INSTRUCTIONS_HEADER}\n{local_inst}"})
     if sender == "connor":
         from chatroom import _read_connor_persona
 
@@ -1843,6 +1859,10 @@ async def _chatroom_memory_search(room_id: str, sender: str, model_key: str, pay
     ai_name = wb.get("ai_name", "AI")
     sender_label = _name_for_identity(actor)
     prefix_msgs: list[dict] = []
+    if actor == "aion":
+        local_inst = load_codex_custom_instructions()
+        if local_inst:
+            prefix_msgs.append({"role": "system", "content": f"{CODEX_INSTRUCTIONS_HEADER}\n{local_inst}"})
     if actor == "connor":
         from chatroom import _read_connor_persona
         connor_persona = _read_connor_persona()
@@ -3051,12 +3071,27 @@ async def update_room(room_id: str, body: RoomUpdate):
 
 @router.delete("/rooms/{room_id}")
 async def delete_room(room_id: str):
+    source_tags = set()
     async with get_db() as db:
         await db.execute("PRAGMA foreign_keys = ON")
+        cur = await db.execute("SELECT id FROM chatroom_messages WHERE room_id=?", (room_id,))
+        msg_ids = [row[0] for row in await cur.fetchall()]
+        source_tags = {f"chatroom:{mid}" for mid in msg_ids}
+        await db.execute("DELETE FROM post_sentinel_jobs WHERE parent_id=?", (room_id,))
+        if msg_ids:
+            for chunk_start in range(0, len(msg_ids), 100):
+                chunk = msg_ids[chunk_start:chunk_start + 100]
+                placeholders = ",".join("?" for _ in chunk)
+                await db.execute(f"DELETE FROM post_sentinel_jobs WHERE message_id IN ({placeholders})", tuple(chunk))
         await db.execute("DELETE FROM chatroom_rooms WHERE id=?", (room_id,))
         # 清理锚点（记忆跨房间共享，不随房间删除）
         await db.execute("DELETE FROM chatroom_digest_anchors WHERE room_id=?", (room_id,))
         await db.commit()
+    try:
+        import post_sentinel
+        await post_sentinel.prune_sources(source_tags, parent_id=room_id)
+    except Exception:
+        pass
     await manager.broadcast({"type": "chatroom_room_deleted", "data": {"id": room_id}})
     return {"ok": True}
 
@@ -3162,14 +3197,22 @@ async def messages_around(room_id: str, msg_id: str, before_count: int = Query(6
 
 @router.delete("/messages/{msg_id}")
 async def delete_message(msg_id: str):
+    row = None
     async with get_db() as db:
         db.row_factory = aiosqlite.Row
         cur = await db.execute("SELECT room_id FROM chatroom_messages WHERE id=?", (msg_id,))
         row = await cur.fetchone()
         if row:
+            await db.execute("DELETE FROM post_sentinel_jobs WHERE message_id=?", (msg_id,))
             await db.execute("DELETE FROM chatroom_messages WHERE id=?", (msg_id,))
             await db.commit()
             await broadcast_synced(manager, {"type": "chatroom_msg_deleted", "data": {"id": msg_id, "room_id": row["room_id"]}})
+    if row:
+        try:
+            import post_sentinel
+            await post_sentinel.prune_sources({f"chatroom:{msg_id}"})
+        except Exception:
+            pass
     return {"ok": True}
 
 

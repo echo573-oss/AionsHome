@@ -1270,7 +1270,8 @@ async def call_gemini_cli(messages: list, model: str, meta: dict | None = None,
 
 @logged_ai_call("antigravity_cli")
 async def call_antigravity_cli(messages: list, model: str, meta: dict | None = None,
-                               temperature: float | None = None, max_tokens: int | None = None):
+                               temperature: float | None = None, max_tokens: int | None = None,
+                               effort: str | None = None):
     """Use the official stream with scoped image/audio attachment access."""
     binary = _find_antigravity_binary()
     if not binary:
@@ -1293,10 +1294,11 @@ async def call_antigravity_cli(messages: list, model: str, meta: dict | None = N
         prompt_messages.append(message)
     prompt = _build_cli_prompt(prompt_messages, include_image_refs=False, include_audio_refs=False)
     yield f"{CLI_STATUS_PREFIX}正在回复🚀…"
+    agy_effort = effort or (meta.get("reasoning_effort") if meta else None) or SETTINGS.get("siwc_reasoning_effort") or "medium"
     try:
         async for event in antigravity_cli.stream_chat(
             binary, prompt, model, timeout=_antigravity_print_timeout(meta), image_paths=image_paths,
-            audio_paths=audio_paths,
+            audio_paths=audio_paths, effort=agy_effort,
         ):
             if event["kind"] == "text":
                 yield event["text"]
@@ -1469,16 +1471,30 @@ def _build_codex_chat_environment(base_env: dict | None = None) -> dict:
     }
 
 
+def _normalize_codex_reasoning_effort(effort: str | None) -> str:
+    effort_map = {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "high",
+    }
+    return effort_map.get(str(effort or "").strip().lower(), "medium")
+
+
 def _build_codex_chat_command(
     node: str,
     script: str,
     workspace: str,
     model: str,
     image_paths=None,
+    reasoning_effort: str | None = None,
 ) -> list[str]:
+    effort_val = _normalize_codex_reasoning_effort(
+        reasoning_effort if reasoning_effort is not None else SETTINGS.get("siwc_reasoning_effort")
+    )
     overrides = [
         'model_verbosity="high"',
-        'model_reasoning_effort="high"',
+        f'model_reasoning_effort="{effort_val}"',
         f"model_instructions_file={json.dumps(str(_CODEX_COMPANION_INSTRUCTIONS_FILE), ensure_ascii=False)}",
         f"model_catalog_json={json.dumps(str(Path(_CODEX_CHAT_HOME) / 'companion-models.json'), ensure_ascii=False)}",
         f"developer_instructions={json.dumps(_CODEX_CHAT_DEVELOPER_INSTRUCTIONS, ensure_ascii=False)}",
@@ -1626,7 +1642,8 @@ def _apply_codex_usage_meta(meta: dict | None, usage: dict | None) -> None:
 
 @logged_ai_call("codex_cli")
 async def call_codex_cli(messages: list, model: str, meta: dict | None = None,
-                         temperature: float | None = None, max_tokens: int | None = None):
+                         temperature: float | None = None, max_tokens: int | None = None,
+                         reasoning_effort: str | None = None):
     """通过请求级 Codex App Server 会话增量返回正文与可读推理摘要。"""
     image_paths = _collect_cli_image_paths(messages)
     prompt = _build_cli_prompt(messages, include_image_refs=False)
@@ -1640,12 +1657,15 @@ async def call_codex_cli(messages: list, model: str, meta: dict | None = None,
         yield "[CodexCLI错误] 陪伴模式基础指令文件缺失，已停止启动 Codex CLI"
         return
 
+    effort = reasoning_effort or (meta.get("reasoning_effort") if meta else None) or SETTINGS.get("siwc_reasoning_effort") or "medium"
+
     cmd = _build_codex_chat_command(
         node,
         get_codex_script(),
         _CODEX_WORKSPACE,
         model,
         image_paths=image_paths,
+        reasoning_effort=effort,
     )
 
     try:
@@ -2024,7 +2044,7 @@ async def call_siwc(messages: list, model: str, meta: dict | None = None,
     if max_tokens is not None:
         payload["max_tokens"] = max_tokens
     # SIWC Responses reasoning.effort (optional; sidecar validates allowed values)
-    effort = str(SETTINGS.get("siwc_reasoning_effort") or "").strip().lower()
+    effort = str((meta and meta.get("reasoning_effort")) or SETTINGS.get("siwc_reasoning_effort") or "").strip().lower()
     if effort and effort not in ("default", "auto", ""):
         payload["reasoning_effort"] = effort
     if not payload["model"]:
@@ -2131,10 +2151,12 @@ async def stream_ai(messages: list, model_key: str, meta: dict | None = None, te
             async for chunk in call_gemini_cli(normalized, cfg["model"], meta, temperature, max_tokens):
                 yield chunk
         elif cfg["provider"] == "antigravity_cli":
-            async for chunk in call_antigravity_cli(normalized, cfg["model"], meta, temperature, max_tokens):
+            agy_effort = (meta and meta.get("reasoning_effort")) or SETTINGS.get("siwc_reasoning_effort")
+            async for chunk in call_antigravity_cli(normalized, cfg["model"], meta, temperature, max_tokens, effort=agy_effort):
                 yield chunk
         elif cfg["provider"] == "codex_cli":
-            async for chunk in call_codex_cli(normalized, cfg["model"], meta, temperature, max_tokens):
+            codex_effort = (meta and meta.get("reasoning_effort")) or SETTINGS.get("siwc_reasoning_effort")
+            async for chunk in call_codex_cli(normalized, cfg["model"], meta, temperature, max_tokens, reasoning_effort=codex_effort):
                 yield chunk
         elif cfg["provider"] == "siwc":
             async for chunk in call_siwc(normalized, cfg["model"], meta, temperature, max_tokens, request_timeout=request_timeout):

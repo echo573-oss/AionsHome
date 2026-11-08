@@ -213,6 +213,109 @@ def load_worldbook():
 def save_worldbook(data: dict):
     WORLDBOOK_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
 
+
+# ── Local Codex Custom Instructions ──────────────
+CODEX_INSTRUCTIONS_HEADER = "[本地个性化通用指令 / 底色设定]"
+
+
+def load_codex_custom_instructions(settings: dict | None = None, force_read: bool = False) -> str:
+    """读取本地 Codex 个性化通用指令文件（如果已启用）。
+    自动读取 ~/.codex/AGENTS.md 以及 config.toml 中的 model_instructions_file（如 base-instructions.md）。
+    在测试进程中默认不读取外部实际文件（除非 force_read=True 或显式指定了路径）。
+    """
+    cfg = settings if settings is not None else SETTINGS
+    enabled = cfg.get("codex_instructions_enabled", True)
+    if not enabled:
+        return ""
+
+    custom_path_str = (cfg.get("codex_instructions_path") or "").strip()
+    if custom_path_str:
+        target_path = Path(custom_path_str).expanduser()
+        if target_path.is_file():
+            try:
+                content = target_path.read_text(encoding="utf-8", errors="replace").strip()
+                if content:
+                    return content
+            except Exception:
+                pass
+        return ""
+
+    # 测试进程隔离：如果不强制读取且未显式指定路径，测试进程不读取外部本地文件，确保测试确定性
+    if _is_test_process() and not force_read and not os.environ.get("AIONSHOME_LOAD_CODEX_INSTRUCTIONS"):
+        return ""
+
+    codex_home = os.environ.get("CODEX_HOME") or str(Path.home() / ".codex")
+    instructions_parts: list[str] = []
+    read_paths: set[Path] = set()
+
+    # 1. 读取 Codex 全局 AGENTS.md（在 Codex 原生开窗口聊天时每次必读的全局指令）
+    global_agents_md = Path(codex_home) / "AGENTS.md"
+    if global_agents_md.is_file():
+        try:
+            content = global_agents_md.read_text(encoding="utf-8", errors="replace").strip()
+            if content:
+                instructions_parts.append(content)
+                read_paths.add(global_agents_md.resolve())
+        except Exception:
+            pass
+
+    # 2. 读取 ~/.codex/config.toml 中指定的 model_instructions_file（如 base-instructions.md）
+    config_toml = Path(codex_home) / "config.toml"
+    found_mif = False
+    if config_toml.is_file():
+        try:
+            import tomllib
+            with open(config_toml, "rb") as f:
+                toml_data = tomllib.load(f)
+            mif = toml_data.get("model_instructions_file")
+            if mif:
+                p = Path(mif).expanduser()
+                if not p.is_absolute():
+                    p = Path(codex_home) / p
+                if p.is_file():
+                    found_mif = True
+                    resolved = p.resolve()
+                    if resolved not in read_paths:
+                        content = p.read_text(encoding="utf-8", errors="replace").strip()
+                        if content:
+                            instructions_parts.append(content)
+                            read_paths.add(resolved)
+        except Exception:
+            try:
+                raw = config_toml.read_text(encoding="utf-8", errors="replace")
+                match = re.search(r"""model_instructions_file\s*=\s*['"]([^'"]+)['"]""", raw)
+                if match:
+                    p = Path(match.group(1)).expanduser()
+                    if not p.is_absolute():
+                        p = Path(codex_home) / p
+                    if p.is_file():
+                        found_mif = True
+                        resolved = p.resolve()
+                        if resolved not in read_paths:
+                            content = p.read_text(encoding="utf-8", errors="replace").strip()
+                            if content:
+                                instructions_parts.append(content)
+                                read_paths.add(resolved)
+            except Exception:
+                pass
+
+    # 3. 若未通过 config.toml 找到文件，兜底探测 base-instructions.md 或 instructions.md
+    if not found_mif:
+        for fallback_name in ("base-instructions.md", "instructions.md"):
+            candidate = Path(codex_home) / fallback_name
+            if candidate.is_file():
+                resolved = candidate.resolve()
+                if resolved not in read_paths:
+                    try:
+                        content = candidate.read_text(encoding="utf-8", errors="replace").strip()
+                        if content:
+                            instructions_parts.append(content)
+                            read_paths.add(resolved)
+                            break
+                    except Exception:
+                        pass
+
+    return "\n\n".join(instructions_parts).strip()
 # ── Chat Status ──────────────────────────────────
 def load_chat_status() -> dict:
     if CHAT_STATUS_PATH.exists():

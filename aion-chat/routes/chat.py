@@ -4,6 +4,7 @@ from toy_profiles import allow_legacy as allow_legacy_toy, state as toy_selectio
 """
 
 import json, time, asyncio, re, shutil
+from uuid import uuid4
 from datetime import datetime
 from dataclasses import replace
 from pathlib import Path
@@ -14,7 +15,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List, Any
 
-from config import DEFAULT_MODEL, MODELS, load_worldbook, SETTINGS, UPLOADS_DIR, ALBUM_IMAGES_DIR, CODEX_UPLOADS_DIR, PUBLIC_DIR, resolve_model_key, resolve_model_transport_mode
+from config import DEFAULT_MODEL, MODELS, load_worldbook, SETTINGS, UPLOADS_DIR, ALBUM_IMAGES_DIR, CODEX_UPLOADS_DIR, PUBLIC_DIR, resolve_model_key, resolve_model_transport_mode, load_codex_custom_instructions, CODEX_INSTRUCTIONS_HEADER
 from database import get_db
 from ws import manager
 from system_logs import emit_chat_debug
@@ -429,6 +430,56 @@ async def _consume_chat_realtime_stream(
         outcome.used_fallback,
         outcome.manual_retry_required,
     )
+
+
+async def _prepare_private_memory_records(text):
+    matches = MEMORY_CMD_PATTERN.findall(text)
+    contents = [match.strip() for match in matches if match.strip()]
+    records = [(content, await get_embedding(content)) for content in contents]
+    return MEMORY_CMD_PATTERN.sub("", text).strip() if matches else text, records
+
+
+async def _insert_private_memory_records(db, conv_id, user_msg_id, ai_msg_id, reply_ts, records):
+    if not records:
+        return []
+
+    sources = [f"private:{ai_msg_id}"]
+    start_ts = reply_ts
+    if user_msg_id:
+        cursor = await db.execute(
+            "SELECT created_at FROM messages WHERE id=? AND conv_id=? AND role='user'",
+            (user_msg_id, conv_id),
+        )
+        user_row = await cursor.fetchone()
+        if user_row:
+            sources.insert(0, f"private:{user_msg_id}")
+            start_ts = min(user_row[0], reply_ts)
+
+    source_json = json.dumps(sources)
+    saved = []
+    for content, vector in records:
+        mem_id = f"mem_{uuid4().hex}"
+        await db.execute(
+            "INSERT INTO memories (id, content, type, created_at, source_conv, embedding, keywords, "
+            "importance, source_start_ts, source_end_ts, unresolved, source_msg_id) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (mem_id, content, "重要事件", reply_ts, conv_id, _pack_embedding(vector) if vector else None,
+             "", 0.5, start_ts, reply_ts, 0, source_json),
+        )
+        saved.append({
+            "id": mem_id, "content": content, "type": "重要事件", "created_at": reply_ts,
+            "keywords": "", "importance": 0.5, "source_start_ts": start_ts,
+            "source_end_ts": reply_ts, "source_msg_id": source_json,
+        })
+    return saved
+
+
+async def _publish_private_memory_records(records, ai_msg_id, queue):
+    for item in records:
+        await manager.broadcast({"type": "memory_added", "data": item})
+        event = {"type": "memory_record", "msg_id": ai_msg_id, "content": item["content"], "mem_id": item["id"]}
+        await queue.put(event)
+        await manager.broadcast({"type": "memory_record", "data": event})
 
 
 async def _save_stopped_chat_reply(conv_id, msg_id, visible_text, result, queue):
@@ -1206,10 +1257,71 @@ async def get_luckin_order_detail(order_id: str):
 @router.delete("/api/conversations/{conv_id}")
 async def delete_conversation(conv_id: str):
     from routes.files import delete_exported_file
+    deleted_mem_ids = []
+    source_tags = set()
     async with get_db() as db:
         await db.execute("PRAGMA foreign_keys = ON")
+        # 1. 收集属于此对话的消息 ID
+        cur = await db.execute("SELECT id FROM messages WHERE conv_id=?", (conv_id,))
+        msg_ids = [row[0] for row in await cur.fetchall()]
+        source_tags = {f"private:{mid}" for mid in msg_ids}
+        msg_id_set = set(msg_ids)
+
+        # 2. 查找并删除由此对话生成的记忆（按 source_conv 匹配，或者其消息来源全属于本对话）
+        cur = await db.execute("SELECT id FROM memories WHERE source_conv=?", (conv_id,))
+        deleted_mem_ids = [row[0] for row in await cur.fetchall()]
+
+        if msg_id_set:
+            cur = await db.execute("SELECT id, source_msg_id FROM memories WHERE source_msg_id IS NOT NULL AND source_msg_id != ''")
+            for r in await cur.fetchall():
+                mem_id, raw_source = r[0], r[1]
+                if mem_id in deleted_mem_ids:
+                    continue
+                try:
+                    parsed = json.loads(raw_source)
+                    if isinstance(parsed, list):
+                        normalized = [item.split(":", 1)[1] if ":" in item else item for item in parsed if isinstance(item, str)]
+                        if normalized and all(mid in msg_id_set for mid in normalized):
+                            deleted_mem_ids.append(mem_id)
+                    elif isinstance(parsed, str):
+                        mid = parsed.split(":", 1)[1] if ":" in parsed else parsed
+                        if mid in msg_id_set:
+                            deleted_mem_ids.append(mem_id)
+                except Exception:
+                    if raw_source in msg_id_set:
+                        deleted_mem_ids.append(mem_id)
+
+        if deleted_mem_ids:
+            for chunk_start in range(0, len(deleted_mem_ids), 100):
+                chunk = deleted_mem_ids[chunk_start:chunk_start + 100]
+                placeholders = ",".join("?" for _ in chunk)
+                await db.execute(f"DELETE FROM memories WHERE id IN ({placeholders})", tuple(chunk))
+
+        # 3. 清理 post_sentinel_jobs、朋友圈、心语
+        await db.execute("DELETE FROM post_sentinel_jobs WHERE parent_id=?", (conv_id,))
+        if msg_ids:
+            for chunk_start in range(0, len(msg_ids), 100):
+                chunk = msg_ids[chunk_start:chunk_start + 100]
+                placeholders = ",".join("?" for _ in chunk)
+                await db.execute(f"DELETE FROM post_sentinel_jobs WHERE message_id IN ({placeholders})", tuple(chunk))
+        await db.execute("DELETE FROM moments WHERE source_conv=?", (conv_id,))
+        await db.execute("DELETE FROM heart_whispers WHERE conv_id=?", (conv_id,))
+
+        # 4. 删除会话自身（外键级联删除 messages）
         await db.execute("DELETE FROM conversations WHERE id=?", (conv_id,))
         await db.commit()
+
+    # 5. 广播被删除的记忆事件
+    for mid in deleted_mem_ids:
+        await manager.broadcast({"type": "memory_deleted", "data": {"id": mid}})
+
+    # 6. 清理后置哨兵动态画像中来源于这些消息的条目
+    try:
+        import post_sentinel
+        await post_sentinel.prune_sources(source_tags, parent_id=conv_id)
+    except Exception:
+        pass
+
     await manager.broadcast({"type": "conv_deleted", "data": {"id": conv_id}})
     delete_exported_file(conv_id)
     return {"ok": True}
@@ -1267,16 +1379,51 @@ async def list_messages(conv_id: str, limit: int = Query(50, ge=1, le=500), befo
 @router.delete("/api/messages/{msg_id}")
 async def delete_message(msg_id: str):
     conv_id = None
+    deleted_mem_ids = []
     async with get_db() as db:
         db.row_factory = __import__('aiosqlite').Row
         cur = await db.execute("SELECT * FROM messages WHERE id=?", (msg_id,))
         msg = await cur.fetchone()
         if msg:
             conv_id = msg["conv_id"]
+            # 查找并处理挂载在该消息上的记忆
+            cur = await db.execute("SELECT id, source_msg_id FROM memories WHERE source_msg_id IS NOT NULL AND source_msg_id != ''")
+            for r in await cur.fetchall():
+                mem_id, raw_source = r["id"], r["source_msg_id"]
+                try:
+                    parsed = json.loads(raw_source)
+                    if isinstance(parsed, list):
+                        if msg_id in parsed or f"private:{msg_id}" in parsed:
+                            remaining = [item for item in parsed if item != msg_id and item != f"private:{msg_id}"]
+                            if not remaining:
+                                deleted_mem_ids.append(mem_id)
+                            else:
+                                await db.execute("UPDATE memories SET source_msg_id=? WHERE id=?", (json.dumps(remaining, ensure_ascii=False), mem_id))
+                    elif isinstance(parsed, str):
+                        if parsed == msg_id or parsed == f"private:{msg_id}":
+                            deleted_mem_ids.append(mem_id)
+                except Exception:
+                    if raw_source == msg_id or raw_source == f"private:{msg_id}":
+                        deleted_mem_ids.append(mem_id)
+
+            if deleted_mem_ids:
+                placeholders = ",".join("?" for _ in deleted_mem_ids)
+                await db.execute(f"DELETE FROM memories WHERE id IN ({placeholders})", tuple(deleted_mem_ids))
+
+            await db.execute("DELETE FROM post_sentinel_jobs WHERE message_id=?", (msg_id,))
+            await db.execute("DELETE FROM moments WHERE source_msg_id=?", (msg_id,))
+            await db.execute("DELETE FROM heart_whispers WHERE msg_id=?", (msg_id,))
             await db.execute("DELETE FROM messages WHERE id=?", (msg_id,))
             await db.commit()
             await manager.broadcast({"type": "msg_deleted", "data": {"id": msg_id, "conv_id": conv_id}})
+            for mid in deleted_mem_ids:
+                await manager.broadcast({"type": "memory_deleted", "data": {"id": mid}})
     if conv_id:
+        try:
+            import post_sentinel
+            await post_sentinel.prune_sources({f"private:{msg_id}"})
+        except Exception:
+            pass
         await export_conversation(conv_id)
     return {"ok": True}
 
@@ -1503,6 +1650,9 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
     ai_name = wb.get("ai_name") or "AI"
     user_name = wb.get("user_name") or "用户"
     prefix = []
+    local_inst = load_codex_custom_instructions()
+    if local_inst:
+        prefix.append({"role": "system", "content": f"{CODEX_INSTRUCTIONS_HEADER}\n{local_inst}"})
     if wb.get("ai_persona"):
         prefix.append({"role": "system", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
     if wb.get("user_persona"):
@@ -1552,10 +1702,10 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
     )
 
     async def _do_surfacing():
-        return await build_surfacing_memories(topic, recall_keywords)
+        return await build_surfacing_memories(topic, recall_keywords, worldbook_persona=wb.get("ai_persona"))
     async def _do_recall():
         if recall_query:
-            return await recall_memories(recall_query, query_keywords=recall_keywords)
+            return await recall_memories(recall_query, query_keywords=recall_keywords, worldbook_persona=wb.get("ai_persona"))
         return [], []
 
     (surfaced, surfaced_ids), (_, debug_top6) = await asyncio.gather(
@@ -1815,30 +1965,7 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
                             from routes.moments import _trigger_ai_replies
                             spawn_generation_task(_trigger_ai_replies(mt_id, exclude_author="aion"))
 
-            memory_matches = MEMORY_CMD_PATTERN.findall(full_text)
-            if memory_matches:
-                full_text = MEMORY_CMD_PATTERN.sub("", full_text).strip()
-                for mem_content in memory_matches:
-                    mem_content = mem_content.strip()
-                    if mem_content:
-                        mem_now = time.time()
-                        mem_id = f"mem_{int(mem_now*1000)}"
-                        vec = await get_embedding(mem_content)
-                        async with get_db() as mem_db:
-                            await mem_db.execute(
-                                "INSERT INTO memories (id, content, type, created_at, source_conv, embedding, keywords, importance, source_start_ts, source_end_ts, unresolved) "
-                                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                                (mem_id, mem_content, "重要事件", mem_now, conv_id,
-                                 _pack_embedding(vec) if vec else None, '', 0.5, None, None, 0)
-                            )
-                            await mem_db.commit()
-                        mem_data = {"id": mem_id, "content": mem_content, "type": "重要事件",
-                                    "created_at": mem_now, "keywords": "", "importance": 0.5,
-                                    "source_start_ts": None, "source_end_ts": None}
-                        await manager.broadcast({"type": "memory_added", "data": mem_data})
-                        mr_data = {'type': 'memory_record', 'msg_id': ai_msg_id, 'content': mem_content, 'mem_id': mem_id}
-                        await _q.put(mr_data)
-                        await manager.broadcast({"type": "memory_record", "data": mr_data})
+            full_text, pending_memories = await _prepare_private_memory_records(full_text)
 
             full_text = await _process_wish_commands(
                 full_text,
@@ -1895,10 +2022,14 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
                     (ai_msg_id, conv_id, "assistant", full_text, now2, att_json, usage_meta.get("reasoning_content", "").strip())
                 )
                 await db2.execute("UPDATE conversations SET updated_at=? WHERE id=?", (now2, conv_id))
+                saved_memories = await _insert_private_memory_records(
+                    db2, conv_id, msg_id, ai_msg_id, now2, pending_memories,
+                )
                 await db2.commit()
 
             ai_msg = {"id": ai_msg_id, "conv_id": conv_id, "role": "assistant", "content": full_text, "created_at": now2, "attachments": reply_atts, "reasoning_content": usage_meta.get("reasoning_content", "").strip()}
             await manager.broadcast({"type": "msg_created", "data": ai_msg})
+            await _publish_private_memory_records(saved_memories, ai_msg_id, _q)
             await broadcast_app_supervision_command(supervision_command)
             await export_conversation(conv_id)
 
@@ -2136,6 +2267,9 @@ async def send_message(conv_id: str, body: MsgCreate):
     ai_name = wb.get("ai_name") or "AI"
     user_name = wb.get("user_name") or "用户"
     prefix = []
+    local_inst = load_codex_custom_instructions()
+    if local_inst:
+        prefix.append({"role": "system", "content": f"{CODEX_INSTRUCTIONS_HEADER}\n{local_inst}"})
     if wb.get("ai_persona"):
         prefix.append({"role": "system", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
     if wb.get("user_persona"):
@@ -2242,11 +2376,11 @@ async def send_message(conv_id: str, body: MsgCreate):
         )
 
         async def _do_surfacing():
-            return await build_surfacing_memories(topic, recall_keywords)
+            return await build_surfacing_memories(topic, recall_keywords, worldbook_persona=wb.get("ai_persona"))
 
         async def _do_recall():
             if recall_query:
-                return await recall_memories(recall_query, query_keywords=recall_keywords)
+                return await recall_memories(recall_query, query_keywords=recall_keywords, worldbook_persona=wb.get("ai_persona"))
             return [], []
 
         (surfaced, surfaced_ids), (_, debug_top6) = await asyncio.gather(
@@ -2525,31 +2659,7 @@ async def send_message(conv_id: str, body: MsgCreate):
                             spawn_generation_task(_trigger_ai_replies(mt_id, exclude_author="aion"))
 
             # 检测 [MEMORY:xxx] 记忆录入指令
-            memory_matches = MEMORY_CMD_PATTERN.findall(full_text)
-            if memory_matches:
-                full_text = MEMORY_CMD_PATTERN.sub("", full_text).strip()
-                for mem_content in memory_matches:
-                    mem_content = mem_content.strip()
-                    if mem_content:
-                        mem_now = time.time()
-                        mem_id = f"mem_{int(mem_now*1000)}"
-                        vec = await get_embedding(mem_content)
-                        async with get_db() as mem_db:
-                            await mem_db.execute(
-                                "INSERT INTO memories (id, content, type, created_at, source_conv, embedding, keywords, importance, source_start_ts, source_end_ts, unresolved) "
-                                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                                (mem_id, mem_content, "重要事件", mem_now, conv_id,
-                                 _pack_embedding(vec) if vec else None, '', 0.5, None, None, 0)
-                            )
-                            await mem_db.commit()
-                        mem_data = {"id": mem_id, "content": mem_content, "type": "重要事件",
-                                    "created_at": mem_now, "keywords": "", "importance": 0.5,
-                                    "source_start_ts": None, "source_end_ts": None}
-                        await manager.broadcast({"type": "memory_added", "data": mem_data})
-                        mr_data = {'type': 'memory_record', 'msg_id': ai_msg_id, 'content': mem_content, 'mem_id': mem_id}
-                        await _q.put(mr_data)
-                        await manager.broadcast({"type": "memory_record", "data": mr_data})
-                        print(f"[MEMORY] AI 主动录入记忆: {mem_content[:50]}")
+            full_text, pending_memories = await _prepare_private_memory_records(full_text)
 
             full_text = await _process_wish_commands(
                 full_text,
@@ -2647,10 +2757,14 @@ async def send_message(conv_id: str, body: MsgCreate):
                     (ai_msg_id, conv_id, "assistant", full_text, now2, att_json, usage_meta.get("reasoning_content", "").strip())
                 )
                 await db2.execute("UPDATE conversations SET updated_at=? WHERE id=?", (now2, conv_id))
+                saved_memories = await _insert_private_memory_records(
+                    db2, conv_id, msg_id, ai_msg_id, now2, pending_memories,
+                )
                 await db2.commit()
 
             ai_msg = {"id": ai_msg_id, "conv_id": conv_id, "role": "assistant", "content": full_text, "created_at": now2, "attachments": reply_atts, "reasoning_content": usage_meta.get("reasoning_content", "").strip()}
             await manager.broadcast({"type": "msg_created", "data": ai_msg})
+            await _publish_private_memory_records(saved_memories, ai_msg_id, _q)
             await broadcast_app_supervision_command(supervision_command)
             await export_conversation(conv_id)
 
@@ -3104,6 +3218,9 @@ async def perform_private_memory_search(
     user_name = wb.get("user_name", "用户")
     ai_name = wb.get("ai_name", "AI")
     messages: list[dict] = []
+    local_inst = load_codex_custom_instructions()
+    if local_inst:
+        messages.append({"role": "system", "content": f"{CODEX_INSTRUCTIONS_HEADER}\n{local_inst}"})
     if wb.get("ai_persona"):
         messages.extend([
             {"role": "system", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"},
@@ -3241,6 +3358,9 @@ async def perform_web_search_check(conv_id: str, model_key: str, searches: list[
     ai_name = wb.get("ai_name", "AI")
 
     prefix = []
+    local_inst = load_codex_custom_instructions()
+    if local_inst:
+        prefix.append({"role": "system", "content": f"{CODEX_INSTRUCTIONS_HEADER}\n{local_inst}"})
     if wb.get("ai_persona"):
         prefix.append({"role": "system", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
     if wb.get("user_persona"):
@@ -3416,6 +3536,9 @@ async def perform_poi_check(conv_id: str, model_key: str, categories: list[str])
     ai_name = wb.get("ai_name", "AI")
 
     prefix = []
+    local_inst = load_codex_custom_instructions()
+    if local_inst:
+        prefix.append({"role": "system", "content": f"{CODEX_INSTRUCTIONS_HEADER}\n{local_inst}"})
     if wb.get("ai_persona"):
         prefix.append({"role": "system", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
     if wb.get("user_persona"):
@@ -3557,6 +3680,9 @@ async def perform_activity_check(conv_id: str, model_key: str, n: int = 6):
         heart_rate_block = ""
 
     prefix = []
+    local_inst = load_codex_custom_instructions()
+    if local_inst:
+        prefix.append({"role": "system", "content": f"{CODEX_INSTRUCTIONS_HEADER}\n{local_inst}"})
     if wb.get("ai_persona"):
         prefix.append({"role": "system", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
     if wb.get("user_persona"):
@@ -3681,6 +3807,8 @@ async def regenerate_message(conv_id: str, context_limit: int = 30, whisper_mode
     # ── 合并私聊 + 群聊消息为统一时间线 ──
     merged = await fetch_merged_timeline("aion", context_limit, conv_id=conv_id)
     history = render_merged_timeline(merged, "aion")
+    trigger_user = next((row for row in reversed(merged) if row.get("sender") == "user"), {})
+    trigger_user_id = trigger_user.get("id") if trigger_user.get("source") == "private" else None
 
     # 图片保留最近两轮用户上下文 + 语音消息处理（与 send_message 一致）
     last_user_idx = -1
@@ -3700,6 +3828,9 @@ async def regenerate_message(conv_id: str, context_limit: int = 30, whisper_mode
     ai_name = wb.get("ai_name") or "AI"
     user_name = wb.get("user_name") or "用户"
     prefix = []
+    local_inst = load_codex_custom_instructions()
+    if local_inst:
+        prefix.append({"role": "system", "content": f"{CODEX_INSTRUCTIONS_HEADER}\n{local_inst}"})
     if wb.get("ai_persona"):
         prefix.append({"role": "system", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
     if wb.get("user_persona"):
@@ -3754,7 +3885,7 @@ async def regenerate_message(conv_id: str, context_limit: int = 30, whisper_mode
         is_search_needed = digest_result.get("is_search_needed", False)
 
         # 3. 注入当前时间（缓存分界点）+ 背景记忆（动态内容）
-        surfaced, surfaced_ids = await build_surfacing_memories(topic, recall_keywords)
+        surfaced, surfaced_ids = await build_surfacing_memories(topic, recall_keywords, worldbook_persona=wb.get("ai_persona"))
         now_str = datetime.now().strftime("%Y年%m月%d日  %H:%M:%S")
         bg_block = f"系统当前的准确时间是 {now_str}"
         health_text = await build_health_summary()
@@ -3787,7 +3918,7 @@ async def regenerate_message(conv_id: str, context_limit: int = 30, whisper_mode
         )
 
         if recall_query:
-            _, debug_top6 = await recall_memories(recall_query, query_keywords=recall_keywords)
+            _, debug_top6 = await recall_memories(recall_query, query_keywords=recall_keywords, worldbook_persona=wb.get("ai_persona"))
         else:
             debug_top6 = []
 
@@ -4036,31 +4167,7 @@ async def regenerate_message(conv_id: str, context_limit: int = 30, whisper_mode
                             spawn_generation_task(_trigger_ai_replies(mt_id, exclude_author="aion"))
 
             # 检测 [MEMORY:xxx] 记忆录入指令
-            memory_matches = MEMORY_CMD_PATTERN.findall(full_text)
-            if memory_matches:
-                full_text = MEMORY_CMD_PATTERN.sub("", full_text).strip()
-                for mem_content in memory_matches:
-                    mem_content = mem_content.strip()
-                    if mem_content:
-                        mem_now = time.time()
-                        mem_id = f"mem_{int(mem_now*1000)}"
-                        vec = await get_embedding(mem_content)
-                        async with get_db() as mem_db:
-                            await mem_db.execute(
-                                "INSERT INTO memories (id, content, type, created_at, source_conv, embedding, keywords, importance, source_start_ts, source_end_ts, unresolved) "
-                                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                                (mem_id, mem_content, "重要事件", mem_now, conv_id,
-                                 _pack_embedding(vec) if vec else None, '', 0.5, None, None, 0)
-                            )
-                            await mem_db.commit()
-                        mem_data = {"id": mem_id, "content": mem_content, "type": "重要事件",
-                                    "created_at": mem_now, "keywords": "", "importance": 0.5,
-                                    "source_start_ts": None, "source_end_ts": None}
-                        await manager.broadcast({"type": "memory_added", "data": mem_data})
-                        mr_data = {'type': 'memory_record', 'msg_id': ai_msg_id, 'content': mem_content, 'mem_id': mem_id}
-                        await _q.put(mr_data)
-                        await manager.broadcast({"type": "memory_record", "data": mr_data})
-                        print(f"[MEMORY] AI 主动录入记忆: {mem_content[:50]}")
+            full_text, pending_memories = await _prepare_private_memory_records(full_text)
 
             full_text = await _process_wish_commands(
                 full_text,
@@ -4111,10 +4218,14 @@ async def regenerate_message(conv_id: str, context_limit: int = 30, whisper_mode
                     (ai_msg_id, conv_id, "assistant", full_text, now2, att_json, usage_meta.get("reasoning_content", "").strip())
                 )
                 await db2.execute("UPDATE conversations SET updated_at=? WHERE id=?", (now2, conv_id))
+                saved_memories = await _insert_private_memory_records(
+                    db2, conv_id, trigger_user_id, ai_msg_id, now2, pending_memories,
+                )
                 await db2.commit()
 
             ai_msg = {"id": ai_msg_id, "conv_id": conv_id, "role": "assistant", "content": full_text, "created_at": now2, "attachments": reply_atts, "reasoning_content": usage_meta.get("reasoning_content", "").strip()}
             await manager.broadcast({"type": "msg_created", "data": ai_msg})
+            await _publish_private_memory_records(saved_memories, ai_msg_id, _q)
             await export_conversation(conv_id)
 
             # 推送 [TOY:x] 指令到前端

@@ -134,6 +134,17 @@ class AntigravityProfileTests(unittest.TestCase):
         self.assertNotIn('--dangerously-skip-permissions', command)
         self.assertNotIn('--continue', command)
 
+    def test_command_passes_optional_effort_flag(self):
+        cmd = agy.build_chat_command('agy.exe', 'gemini-3.1-pro', '90s', effort='medium')
+        self.assertIn('--effort', cmd)
+        self.assertEqual(cmd[cmd.index('--effort') + 1], 'medium')
+
+        cmd_suffix = agy.build_chat_command('agy.exe', 'gemini-3.1-pro-high', '90s', effort='medium')
+        self.assertNotIn('--effort', cmd_suffix)
+
+        cmd_none = agy.build_chat_command('agy.exe', 'gemini-3.1-pro', '90s', effort=None)
+        self.assertNotIn('--effort', cmd_none)
+
     def test_catalog_uses_cli_model_slugs_and_skips_unavailable_models(self):
         catalog = agy.parse_model_catalog(json.dumps({'models': [
             {'slug': 'gemini-3.1-pro-high', 'name': 'Gemini 3.1 Pro (High)'},
