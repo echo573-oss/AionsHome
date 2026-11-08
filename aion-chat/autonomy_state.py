@@ -27,6 +27,7 @@ ACTION_IDS = (
     "billiards_play",
     "home_dynamics",
     "memory_browse",
+    "diary_browse",
     "album_browse",
     "web_roam",
     "xhs_roam",
