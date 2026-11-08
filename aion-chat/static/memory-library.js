@@ -5,7 +5,7 @@
   const params = new URLSearchParams(location.search);
   const names = {main:'主AI', chatroom:'第二AI'};
   const state = {store:params.get('store') === 'chatroom' || params.get('store') === 'second' ? 'chatroom' : 'main',
-    view:params.get('view') === 'unresolved' ? 'unresolved' : 'memories', filter:['friend','unresolved'].includes(params.get('kind')) ? params.get('kind') : 'all', page:1, limit:20, total:0, items:[], selected:null, detail:null,
+    view:params.get('view') === 'unresolved' ? 'unresolved' : 'memories', filter:['friend','lan_thought','unresolved'].includes(params.get('kind')) ? params.get('kind') : 'all', page:1, limit:20, total:0, items:[], selected:null, detail:null,
     pane:'source', sources:[], sourcePage:0, sourceTotal:0, sourceExact:true, sourceMore:false};
   let listRequest = 0, detailRequest = 0, sourceRequest = 0, dialogRequest = 0, searchTimer, dialogBusy = false, refreshPending = false;
   let initialDraft = null;
@@ -15,7 +15,7 @@
   const keywords = raw => { try { const a = JSON.parse(raw); if (Array.isArray(a)) return a.join(' · '); } catch {} return raw || ''; };
   const stamp = ts => ts ? new Date(ts * 1000).toLocaleString('zh-CN', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '未记录';
   const day = ts => { const d = new Date((ts || Date.now()/1000)*1000); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
-  const kindLabel = m => ({daily:'日常', long_term:'长期重要', friend:'朋友记忆'}[m.memory_kind] || '长期重要');
+  const kindLabel = m => ({daily:'日常', long_term:'长期重要', friend:'朋友记忆', lan_thought:'岚的想法'}[m.memory_kind] || '长期重要');
   const periodLabel = m => ({day:'日摘要',week:'周摘要',month:'月摘要',year:'年摘要',fact:'提炼事实'}[m.period_kind] || (m.is_atom ? '' : '压缩摘要'));
   const sourceHref = m => `${m.id.startsWith('private:') ? '/chat?conv=' : '/chatroom?room='}${encodeURIComponent(m.window_id)}&msg=${encodeURIComponent(m.id.slice(m.id.indexOf(':')+1))}`;
   function status(text) { el('status').textContent = text; }
@@ -25,7 +25,7 @@
     document.querySelectorAll('[data-store]').forEach(b => b.setAttribute('aria-pressed', b.dataset.store === state.store));
     document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-selected', b.dataset.view === state.view));
     el('viewHelp').textContent = state.view === 'atoms' ? '活跃与归档原文' : state.view === 'unresolved' || state.filter === 'unresolved' ? '含已归档的未完成记忆' : '当前参与召回';
-    const filters = state.view === 'atoms' ? [['all','全部'],['active','活跃'],['cold','已归档']] : [['all','全部'],['daily','日常'],['long_term','长期重要'],['friend','朋友记忆'],...(state.view === 'memories' ? [['unresolved','当前未完成']] : [])];
+    const filters = state.view === 'atoms' ? [['all','全部'],['active','活跃'],['cold','已归档']] : [['all','全部'],['daily','日常'],['long_term','长期重要'],['friend','朋友记忆'],...(state.store === 'main' ? [['lan_thought','岚的想法']] : []),...(state.view === 'memories' ? [['unresolved','当前未完成']] : [])];
     el('chips').innerHTML = filters.map(([id,label]) => `<button class="chip" data-filter="${id}" aria-pressed="${state.filter === id}">${label}</button>`).join('');
   }
   function entryText(content) {
@@ -250,7 +250,7 @@
       const m = result.item;
       const originalDay = m ? day(m.source_start_ts || m.created_at) : day();
       modal(id ? '编辑记忆' : '新增记忆', `<label class="field">内容<textarea id="editText" maxlength="30000" placeholder="记录一件值得记住的事…">${esc(m?.content || '')}</textarea></label>
-        <div class="form-grid"><label class="field">发生日期<input id="editDate" type="date" value="${originalDay}"></label><label class="field">分类<select id="editKind"><option value="daily">日常</option><option value="long_term" ${!m || m.memory_kind === 'long_term' ? 'selected' : ''}>长期重要</option><option value="friend" ${m?.memory_kind === 'friend' ? 'selected' : ''}>朋友记忆</option></select></label></div>
+        <div class="form-grid"><label class="field">发生日期<input id="editDate" type="date" value="${originalDay}"></label><label class="field">分类<select id="editKind"><option value="daily">日常</option><option value="long_term" ${!m || m.memory_kind === 'long_term' ? 'selected' : ''}>长期重要</option><option value="friend" ${m?.memory_kind === 'friend' ? 'selected' : ''}>朋友记忆</option>${store === 'main' ? `<option value="lan_thought" ${m?.memory_kind === 'lan_thought' ? 'selected' : ''}>岚的想法</option>` : ''}</select></label></div>
         <label class="field inline"><input id="editUnresolved" type="checkbox" ${(m ? m.unresolved : state.view === 'unresolved' || state.filter === 'unresolved') ? 'checked' : ''}>当前未完成（完成后取消勾选）</label>
         <label class="field">关键词<input id="editTags" maxlength="2000" value="${esc(keywords(m?.keywords).replaceAll(' · ', '，'))}" placeholder="用逗号分开"></label><details><summary class="note">更多设置</summary><div class="form-grid"><label class="field">重要程度<input id="editImportance" type="number" min="0" max="1" step="0.05" value="${m?.importance ?? .5}"></label></div><label class="field">补充线索<input id="editEvidence" value="${esc(m?.evidence_summary || '')}"></label></details>${relationNote(result.related)}`, cancelSave);
       el('cancelEdit').onclick = dismissDialog;
