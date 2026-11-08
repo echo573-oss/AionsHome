@@ -2,6 +2,7 @@
 import asyncio
 import json
 import re
+from collections.abc import AsyncIterable, Callable
 
 from ai_providers import CLI_STATUS_PREFIX, stream_ai
 from capabilities import is_capability_enabled
@@ -9,6 +10,7 @@ from mcp_client import is_chat_read_tool_name, mcp_manager
 
 MAX_TOOLS = 8
 MAX_TOOL_REPLY = 5000
+ModelStream = Callable[[list[dict], str], AsyncIterable[str]]
 
 
 def _requested_server(message: str, servers: list[dict], *, actor: str = "aion") -> dict | None:
@@ -47,7 +49,15 @@ def _parse_choice(text: str) -> tuple[str | None, dict]:
     return tool, args
 
 
-async def _select_read_tool(user_text: str, model_key: str, available: list[dict]) -> tuple[str | None, dict]:
+async def _default_model_stream(messages: list[dict], model_key: str) -> AsyncIterable[str]:
+    async for chunk in stream_ai(messages, model_key, max_tokens=320, temperature=0):
+        yield chunk
+
+
+async def _select_read_tool(
+    user_text: str, model_key: str, available: list[dict],
+    *, model_stream: ModelStream | None = None,
+) -> tuple[str | None, dict]:
     catalog = [
         {
             "name": tool["name"],
@@ -71,9 +81,10 @@ async def _select_read_tool(user_text: str, model_key: str, available: list[dict
     chunks = []
     total = 0
     async with asyncio.timeout(18):
-        async for chunk in stream_ai(
+        chooser = model_stream or _default_model_stream
+        async for chunk in chooser(
             [{"role": "system", "content": instruction}, {"role": "user", "content": user_text}],
-            model_key, max_tokens=320, temperature=0,
+            model_key,
         ):
             if chunk and not chunk.startswith(CLI_STATUS_PREFIX):
                 chunks.append(chunk)
@@ -83,7 +94,10 @@ async def _select_read_tool(user_text: str, model_key: str, available: list[dict
     return _parse_choice("".join(chunks))
 
 
-async def maybe_read_mcp_context(user_text: str, model_key: str, *, actor: str = "aion") -> str | None:
+async def maybe_read_mcp_context(
+    user_text: str, model_key: str, *, actor: str = "aion",
+    model_stream: ModelStream | None = None,
+) -> str | None:
     """成功或出错时都返回给当前回复的背景；普通消息开销为一次设置检查。"""
     if actor not in {"aion", "connor"}:
         return None
@@ -103,7 +117,7 @@ async def maybe_read_mcp_context(user_text: str, model_key: str, *, actor: str =
         ][:MAX_TOOLS]
         if not available:
             return f"[MCP 读取回执：{name}]\n没有已授权的只读工具。请在娱乐室连接服务器并配置聊天读取工具。"
-        chosen, arguments = await _select_read_tool(user_text, model_key, available)
+        chosen, arguments = await _select_read_tool(user_text, model_key, available, model_stream=model_stream)
         if not chosen:
             return f"[MCP 读取回执：{name}]\n没有匹配到可执行的读取操作，请说明想查看的内容。"
         if chosen not in {t["name"] for t in available}:
@@ -129,14 +143,34 @@ async def maybe_read_mcp_context(user_text: str, model_key: str, *, actor: str =
         return f"[MCP 读取回执：{name}]\n本次读取失败（{type(exc).__name__}），未得到可靠结果。"
 
 
-async def inject_private_mcp_context(history: list[dict], user_text: str, model_key: str) -> bool:
-    context = await maybe_read_mcp_context(user_text, model_key, actor="aion")
+async def inject_mcp_context(
+    history: list[dict], user_text: str, model_key: str, *,
+    actor: str = "aion", model_stream: ModelStream | None = None,
+) -> bool:
+    """将一次只读回执放到最终用户请求之前，不把数据误当角色或系统指令。"""
+    context = await maybe_read_mcp_context(
+        user_text, model_key, actor=actor, model_stream=model_stream,
+    )
     if context is None:
         return False
-    # 插在最后一条用户消息之前，不改变用户的原话。
     last_user = next(
         (idx for idx in range(len(history) - 1, -1, -1) if history[idx].get("role") == "user"),
         len(history),
     )
     history.insert(last_user, {"role": "user", "content": context})
     return True
+
+
+async def inject_private_mcp_context(history: list[dict], user_text: str, model_key: str) -> bool:
+    return await inject_mcp_context(history, user_text, model_key, actor="aion")
+
+
+def eligible_chatroom_user_request(msgs: list[dict], query_text: str, *, ambient_context: str = "") -> bool:
+    """仅在最近一次人类提问明确含 @ 时调用；AI 自发发言不触发。"""
+    if ambient_context or not isinstance(query_text, str) or "@" not in query_text:
+        return False
+    # 群聊里后一个角色接话时，前一个 AI 的回复可能已进入 msgs。
+    for msg in reversed(msgs):
+        if msg.get("sender") == "user":
+            return msg.get("content") == query_text
+    return False

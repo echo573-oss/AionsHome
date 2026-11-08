@@ -130,6 +130,7 @@ class MCPManager:
     def __init__(self):
         # server_name -> { session, read_stream, write_stream, tools, cm, transport_cm }
         self._connections: dict[str, dict] = {}
+        self._connect_locks: dict[str, asyncio.Lock] = {}
 
     # ── 列出所有配置 ────────────────────────
     def list_servers(self) -> list[dict]:
@@ -155,10 +156,16 @@ class MCPManager:
 
     # ── 连接 ────────────────────────────────
     async def connect(self, server_name: str) -> list[dict]:
-        """连接指定 server，返回工具列表"""
+        """对同一 MCP 服务的并发连接只初始化一次。"""
         if server_name in self._connections:
             return self._connections[server_name]["tools"]
+        lock = self._connect_locks.setdefault(server_name, asyncio.Lock())
+        async with lock:
+            if server_name in self._connections:
+                return self._connections[server_name]["tools"]
+            return await self._connect_configured(server_name)
 
+    async def _connect_configured(self, server_name: str) -> list[dict]:
         cfg = _load_config()
         server_cfg = None
         for s in cfg.get("servers", []):

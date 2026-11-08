@@ -101,6 +101,7 @@ from lounge_visit_commands import (
     is_chat_visit_friend_allowed,
 )
 from capabilities import is_capability_enabled
+from mcp_chat import eligible_chatroom_user_request, inject_mcp_context
 from intimacy_skill import (
     generation_guard as intimacy_generation_guard,
     get_card_preview as get_intimacy_preview,
@@ -2208,6 +2209,30 @@ async def _stream_connor_model(messages: list[dict], model_key: str | None = Non
             yield chunk
 
 
+
+async def _maybe_inject_room_mcp_context(
+    history: list[dict], msgs: list[dict], query_text: str, model_key: str,
+    *, actor: str, ambient_context: str = "",
+) -> bool:
+    """仅人类明确要求的读取进入私聊/群聊生成路径；出错不影响聊天。"""
+    if not eligible_chatroom_user_request(msgs, query_text, ambient_context=ambient_context):
+        return False
+
+    async def connor_choice_stream(messages: list[dict], choice_model: str):
+        async for chunk in _stream_connor_model(messages, choice_model):
+            yield chunk
+
+    try:
+        return await inject_mcp_context(
+            history, query_text, model_key, actor=actor,
+            model_stream=connor_choice_stream if actor == "connor" else None,
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        return False
+
+
 def _chatroom_debug_payload(
     *,
     room_id: str,
@@ -3965,6 +3990,10 @@ async def _generate_connor_reply(room_id, room, msgs, _q, context_limit, *, conn
             low_latency_first_chunk=True,
         )
 
+    await _maybe_inject_room_mcp_context(
+        connor_messages, msgs, query_text, connor_model_key, actor="connor",
+    )
+
     async def content_stream():
         nonlocal has_reply
         usage_meta.pop("provider_error", None)
@@ -4182,6 +4211,11 @@ async def _reply_aion(room_id, msgs, context_limit, query_text, model_key, _q, *
             low_latency_first_chunk=True,
         )
 
+    await _maybe_inject_room_mcp_context(
+        aion_history, msgs, query_text, model_key, actor="aion",
+        ambient_context=ambient_context,
+    )
+
     async def content_stream():
         usage_meta.pop("provider_error", None)
         _mark_first_text = model_started()
@@ -4326,6 +4360,11 @@ async def _reply_connor(room_id, msgs, context_limit, query_text, _q, *, connor_
             sse_queue=_q,
             low_latency_first_chunk=True,
         )
+
+    await _maybe_inject_room_mcp_context(
+        connor_history, msgs, query_text, connor_model_key, actor="connor",
+        ambient_context=ambient_context,
+    )
 
     async def content_stream():
         usage_meta.pop("provider_error", None)

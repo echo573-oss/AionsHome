@@ -521,7 +521,7 @@ async function editChatReadTools(serverName, actor = "aion") {
   roleLabel.textContent = '授权角色：';
   const roleSelect = document.createElement('select');
   roleSelect.className = 'pg-manage-input';
-  for (const [value, label] of [['aion', '岚'], ['connor', 'Connor（后续支持）']]) {
+  for (const [value, label] of [['aion', '岚'], ['connor', 'Connor']]) {
     const option = document.createElement('option');
     option.value = value;
     option.textContent = label;
