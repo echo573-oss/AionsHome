@@ -132,6 +132,26 @@ class AutonomyJourneyTests(unittest.IsolatedAsyncioTestCase):
         model.assert_awaited_once()
         save.assert_not_awaited()
 
+    async def test_unfinished_journey_does_not_persist_early_thought(self):
+        async def unfinished(_actor, _session):
+            autonomy._capture_activity_thought({
+                "decision": "FINISH",
+                "recent_thought": "尚未完成的探索不应该误存为结论。",
+            })
+            return autonomy_journey.JourneyResult(False, "no_direction")
+
+        with patch.object(autonomy, "_select_action", new=AsyncMock(return_value={
+                 "action": "web_roam", "reason": "出去走走", "message": "",
+             })), \
+             patch.object(autonomy, "_run_web_journey", new=unfinished), \
+             patch.object(autonomy, "append_idle_event", new=AsyncMock(return_value={"id": "event-3"})), \
+             patch("recent_thoughts.save_recent_thought", new=AsyncMock()) as save:
+            result = await autonomy._run_actor_once("aion")
+
+        self.assertEqual("no_direction", result["result"].outcome)
+        self.assertNotIn("recent_thought", result)
+        save.assert_not_awaited()
+
     async def test_web_journey_capture_only_finishing_thought(self):
         slot = {}
         token = autonomy._AUTONOMY_ACTIVITY_THOUGHT.set(slot)
