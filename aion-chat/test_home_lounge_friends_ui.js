@@ -6,7 +6,7 @@ const test = require('node:test');
 
 const ROOT = __dirname;
 const HOME_PATH = path.join(ROOT, 'static', 'home.html');
-const ICON_PATH = path.join(ROOT, '..', 'public', 'funIcon_0030_好友串门.png');
+const ICON_PATH = fs.existsSync(path.join(ROOT, '..', 'public', 'home-icons-v4', 'lounge-friends.svg')) ? path.join(ROOT, '..', 'public', 'home-icons-v4', 'lounge-friends.svg') : path.join(ROOT, '..', 'public', 'funIcon_0030_好友串门.png');
 
 
 test('home app grid links to lounge friends with the supplied icon', () => {
@@ -14,7 +14,7 @@ test('home app grid links to lounge friends with the supplied icon', () => {
 
   assert.match(
     html,
-    /\{\s*id:\s*['"]lounge-friends['"],\s*name:\s*['"]好友串门['"],\s*icon:\s*['"]\/public\/funIcon_0030_好友串门\.png['"],\s*url:\s*['"]\/lounge-friends['"][\s\S]*?\}/,
+    /\{\s*id:\s*['"]lounge-friends['"],\s*name:\s*['"]好友串门['"],\s*icon:\s*['"]\/public\/(?:funIcon_0030_好友串门\.png|home-icons-v4\/lounge-friends\.svg)['"],\s*url:\s*['"]\/lounge-friends['"][\s\S]*?\}/,
   );
   assert.equal(fs.existsSync(ICON_PATH), true);
 });

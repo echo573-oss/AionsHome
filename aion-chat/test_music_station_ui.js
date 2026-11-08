@@ -58,8 +58,8 @@ const isPersistentSubPage = Function(
 assert.equal(isPersistentSubPage('/music-station'), true);
 
 const homeHtml = fs.readFileSync(path.join(__dirname, 'static', 'home.html'), 'utf8');
-assert.match(homeHtml, /id:\s*'music-station'[\s\S]*?name:\s*'点歌台'[\s\S]*?icon:\s*'\/public\/funIcon_0032_点歌台\.png'[\s\S]*?url:\s*'\/music-station'/);
-assert.ok(fs.existsSync(path.join(__dirname, '..', 'public', 'funIcon_0032_点歌台.png')));
+assert.match(homeHtml, /id:\s*'music-station'[\s\S]*?name:\s*'点歌台'[\s\S]*?icon:\s*'\/public\/(?:funIcon_0032_点歌台\.png|home-icons-v4\/music-station\.svg)'[\s\S]*?url:\s*'\/music-station'/);
+assert.ok(fs.existsSync(path.join(__dirname, '..', 'public', 'funIcon_0032_点歌台.png')) || fs.existsSync(path.join(__dirname, '..', 'public', 'home-icons-v4', 'music-station.svg')));
 
 const stationHtml = fs.readFileSync(path.join(__dirname, 'static', 'music-station.html'), 'utf8');
 const stationCss = fs.readFileSync(path.join(__dirname, 'static', 'music-station.css'), 'utf8');

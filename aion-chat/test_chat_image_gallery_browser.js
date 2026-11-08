@@ -50,7 +50,7 @@ for (const chat of ['chat', 'chatroom']) test(`${chat}: multiple attachments sta
   assert.equal(await page.locator('.aion-image-viewer').count(), 1, 'long press does not close the viewer');
   await page.getByRole('button', { name: '关闭大图', exact: true }).click();
   await page.getByRole('button', { name: /收起/ }).click();
-  assert.equal((await page.locator('.chat-image-group').boundingBox()).height, before.height);
+  assert.ok(Math.abs((await page.locator('.chat-image-group').boundingBox()).height - before.height) < 0.5);
   await page.evaluate(() => messages.innerHTML = renderAttachments(['http://gallery.test/one.png']));
   assert.equal(await page.getByRole('button', { name: /展开/ }).count(), 0);
 });

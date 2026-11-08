@@ -86,7 +86,7 @@ assert.doesNotMatch(family, /状态包历史/);
 assert.doesNotMatch(family, /醒来目的/);
 assert.doesNotMatch(family, /打扰策略/);
 assert.doesNotMatch(activity, /id="tabTimeline"/);
-assert.match(home, /funIcon_0031_家庭动态\.png/);
+assert.match(home, /(?:funIcon_0031_家庭动态\.png|home-icons-v4\/family-dynamics\.svg)/);
 assert.match(home, /url: '\/family-dynamics'/);
 
 const vm = require('vm');

@@ -718,16 +718,14 @@ a.private-whisper-note:focus-visible {
 .message-row.connor .bubbles { align-items: flex-start; }
 .message-row.user .msg-content .bubble {
   background: var(--user-bg);
-  border-bottom-right-radius: 4px;
 }
 .message-row.aion .msg-content .bubble {
   background: var(--aion-bg);
-  border-bottom-left-radius: 4px;
 }
 .message-row.connor .msg-content .bubble {
   background: var(--connor-bg);
-  border-bottom-left-radius: 4px;
 }
+.message-row .msg-content .bubble { border-radius: 15px; }
 
 .message-time {
   font-size: 10px;

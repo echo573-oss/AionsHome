@@ -178,13 +178,8 @@ body[data-theme="light"] .message-row.aion .msg-content .bubble {
 }
 
 body[data-theme="light"] .assistant-message-unit .private-ai-message-content:not(.empty-msg-bubble) {
-  box-sizing: border-box;
-  width: fit-content;
-  max-width: 100%;
-  padding: 10px 14px;
   background: rgba(251, 248, 224, 0.45);
-  border: 1px solid rgba(81, 113, 87, 0.16);
-  border-radius: 15px 15px 15px 5px;
+  border-color: rgba(81, 113, 87, 0.16);
   box-shadow: 0 2px 8px rgba(60, 80, 66, 0.06);
 }
 

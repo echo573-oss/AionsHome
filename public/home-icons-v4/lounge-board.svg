@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs><linearGradient id="tile" x2=".78" y2="1"><stop stop-color="#eef0e3"/><stop offset="1" stop-color="#d7dfcc"/></linearGradient></defs>
+  <rect width="128" height="128" rx="32" fill="url(#tile)"/>
+  <svg x="19" y="19" width="90" height="90" viewBox="0 0 48 48" fill="none" color="#4c6a56" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="24" cy="42" rx="13" ry="2" fill="currentColor" opacity=".12" stroke="none"/>
+    <rect x="9" y="9" width="30" height="29" rx="4" fill="#f8f8f3"/><path d="M15 15h11v11H15Z" fill="#a6b6a3" stroke-width="1.15"/><path d="M30 19h4m-4 5h4m-19 8h19m-14-20h8" stroke-width="1.2"/><circle cx="20" cy="15" r="1.2" fill="#f6ecd1" stroke="none"/>
+  </svg>
+</svg>
