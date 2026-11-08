@@ -1501,16 +1501,18 @@ async def _do_digest(min_messages: int = 0, allow_ai_wishes: bool = False) -> di
             from diary import normalize_diary_payload, publish_ai_moment, save_diary_entry
             if diary_data:
                 diary_entry, moment_entry = normalize_diary_payload(diary_data)
-                saved_diary = await save_diary_entry(
-                    author="aion",
-                    title=diary_entry.get("title", ""),
-                    content=diary_entry.get("content", ""),
-                    mood=diary_entry.get("mood", ""),
-                    source_type="memory_digest",
-                    source_ref=conv_id or "",
-                    source_start_ts=new_msgs[0]["created_at"],
-                    source_end_ts=new_msgs[-1]["created_at"],
-                )
+                saved_diary = None
+                if diary_data.get("write_diary") is not False and diary_entry.get("content"):
+                    saved_diary = await save_diary_entry(
+                        author="aion",
+                        title=diary_entry.get("title", ""),
+                        content=diary_entry.get("content", ""),
+                        mood=diary_entry.get("mood", ""),
+                        source_type="memory_digest",
+                        source_ref=conv_id or "",
+                        source_start_ts=new_msgs[0]["created_at"],
+                        source_end_ts=new_msgs[-1]["created_at"],
+                    )
                 diary_generation["diary_saved"] = bool(saved_diary)
                 if moment_entry and moment_entry.get("content"):
                     published_moment = await publish_ai_moment(
