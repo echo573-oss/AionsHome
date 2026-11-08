@@ -66,11 +66,13 @@ def memory_kind_for_type(memory_type: str) -> str:
     """Keep social memories separate from daily summaries and important memories."""
     if str(memory_type or '').strip().lower() == 'friend':
         return 'friend'
+    if str(memory_type or '').strip().lower() == 'lan_thought':
+        return 'lan_thought'
     return "daily" if str(memory_type or "").strip().lower() in SUMMARY_MEMORY_TYPES else "long_term"
 
 
 def memory_kind_label(memory_type: str) -> str:
-    return {'daily':'日常', 'long_term':'长期重要', 'friend':'朋友记忆'}[memory_kind_for_type(memory_type)]
+    return {'daily':'日常', 'long_term':'长期重要', 'friend':'朋友记忆', 'lan_thought':'岚的想法'}[memory_kind_for_type(memory_type)]
 
 
 def _clean_evidence_summary(value, limit: int = 900) -> str:
@@ -536,6 +538,7 @@ async def build_surfacing_memories(topic: str = "", keywords: list[str] = None,
             cur = await db.execute(
                 "SELECT id, content, type, created_at, source_start_ts, source_end_ts, evidence_summary FROM memories "
                 "WHERE COALESCE(archive_state,'active')='active' "
+                "AND LOWER(type)!='lan_thought' "
                 "AND COALESCE(source_end_ts, source_start_ts, created_at) > ? "
                 "AND id NOT IN (SELECT value FROM json_each(?)) "
                 "ORDER BY COALESCE(source_end_ts, source_start_ts, created_at) DESC LIMIT ?",

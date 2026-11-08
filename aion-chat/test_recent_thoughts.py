@@ -1,4 +1,5 @@
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -7,72 +8,143 @@ import aiosqlite
 
 import recent_thoughts
 import autonomy
+from memory import memory_kind_for_type, memory_kind_label
 
 
-class RecentThoughtsTests(unittest.IsolatedAsyncioTestCase):
+CREATE_MEMORY_TABLE = """
+CREATE TABLE memories (
+    id TEXT PRIMARY KEY, content TEXT NOT NULL, type TEXT DEFAULT 'event',
+    created_at REAL NOT NULL, source_conv TEXT, embedding BLOB,
+    keywords TEXT DEFAULT '', importance REAL DEFAULT 0.5,
+    source_start_ts REAL, source_end_ts REAL, unresolved INTEGER DEFAULT 0,
+    source_msg_id TEXT, evidence_summary TEXT DEFAULT '',
+    evidence_detail_level TEXT DEFAULT 'summary',
+    archive_state TEXT DEFAULT 'active', archived_at REAL
+)
+"""
+
+
+class LanThoughtMemoryTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        db_path = Path(self.temp.name) / "thoughts.db"
+        self.db_path = Path(self.temp.name) / "thoughts.db"
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(CREATE_MEMORY_TABLE)
+            await db.commit()
         self.db_patch = patch.object(
-            recent_thoughts, "get_db",
-            side_effect=lambda: aiosqlite.connect(db_path),
+            recent_thoughts, "get_db", side_effect=lambda: aiosqlite.connect(self.db_path)
         )
         self.db_patch.start()
-        self.broadcast_patch = patch("ws.manager.broadcast", new=AsyncMock())
-        self.broadcast_patch.start()
+        self.vector_patch = patch(
+            "memory.get_embedding", new=AsyncMock(return_value=[0.1, 0.2, 0.3])
+        )
+        self.embedding = self.vector_patch.start()
+        self.notify_patch = patch.object(
+            recent_thoughts, "_notify_main_memory", new=AsyncMock()
+        )
+        self.notify = self.notify_patch.start()
 
     async def asyncTearDown(self):
-        self.broadcast_patch.stop()
+        self.notify_patch.stop()
+        self.vector_patch.stop()
         self.db_patch.stop()
         self.temp.cleanup()
 
-    async def test_save_and_surface_only_once_per_interval(self):
-        with patch.object(recent_thoughts.time, "time", return_value=10000.0):
-            row = await recent_thoughts.save_recent_thought(
-                "aion", "我还想重新读一下那天的话。", source_action="diary_browse",
-                source_ref="di_aion_1",
-            )
-            self.assertIsNotNone(row)
-            self.assertIsNone(await recent_thoughts.save_recent_thought(
-                "aion", "我还想重新读一下那天的话。", source_action="diary_browse",
-            ))
-            self.assertIn("重新读一下", await recent_thoughts.take_recent_thoughts_for_chat("aion"))
-            self.assertEqual("", await recent_thoughts.take_recent_thoughts_for_chat("aion"))
-            self.assertEqual("", await recent_thoughts.take_recent_thoughts_for_chat("connor"))
+    async def test_lan_thought_is_an_independent_memory_category(self):
+        self.assertEqual("lan_thought", memory_kind_for_type("lan_thought"))
+        self.assertEqual("岚的想法", memory_kind_label("lan_thought"))
+        self.assertEqual("long_term", memory_kind_for_type("important"))
 
-        for index in (1, 2):
-            with patch.object(
-                recent_thoughts.time, "time",
-                return_value=10000.0 + index * (recent_thoughts.REOFFER_SECONDS + 1),
-            ):
-                self.assertIn("重新读一下", await recent_thoughts.take_recent_thoughts_for_chat("aion"))
-
-        with patch.object(recent_thoughts.time, "time", return_value=10000.0 + 4 * 86400):
-            self.assertEqual("", await recent_thoughts.take_recent_thoughts_for_chat("aion"))
+    async def test_saves_one_vector_atom_and_no_three_offer_expiry(self):
+        item = await recent_thoughts.save_recent_thought(
+            "aion", "我还想重新读一下那天的话。",
+            source_action="diary_browse", source_ref="di_aion_1",
+        )
+        self.assertIsNotNone(item)
+        self.assertTrue(item["embedding_ready"])
+        self.embedding.assert_awaited_once()
+        self.notify.assert_awaited_once()
+        self.assertIsNone(await recent_thoughts.save_recent_thought(
+            "aion", "我还想重新读一下那天的话。", source_action="diary_browse"
+        ))
+        self.assertEqual("", await recent_thoughts.take_recent_thoughts_for_chat("aion"))
         rows = await recent_thoughts.list_recent_thoughts("aion")
-        self.assertEqual(3, rows[0]["shown_count"])
-        self.assertEqual("resting", rows[0]["status"])
+        self.assertEqual(1, len(rows))
+        self.assertEqual("diary_browse", rows[0]["source_action"])
+        self.assertEqual("di_aion_1", rows[0]["source_ref"])
+        self.assertEqual("我还想重新读一下那天的话。", rows[0]["content"])
 
-    async def test_archive_and_expire_do_not_delete_history(self):
-        now = 10000.0
-        with patch.object(recent_thoughts.time, "time", return_value=now):
-            item = await recent_thoughts.save_recent_thought(
-                "aion", "我以后可能想再写一篇关于这件事的日记。", source_action="memory_browse",
+        async with aiosqlite.connect(self.db_path) as db:
+            record = await (await db.execute(
+                "SELECT type,content,embedding,source_msg_id,source_conv,importance FROM memories"
+            )).fetchone()
+        self.assertEqual("lan_thought", record[0])
+        self.assertTrue(record[1].startswith("岚的想法："))
+        self.assertIsNotNone(record[2])
+        self.assertEqual("[]", record[3])
+        self.assertEqual("autonomy:diary_browse:di_aion_1", record[4])
+        self.assertEqual(0.8, record[5])
+
+    async def test_vector_recall_finds_thought_but_recency_does_not_push_it(self):
+        import memory
+
+        item = await recent_thoughts.save_recent_thought(
+            "aion", "记忆应当保留理解变化的过程，而不仅是当时的结论。",
+            source_action="diary_browse", source_ref="di_aion_history",
+        )
+        # The same main-memory vector search used in real chat.
+        with patch.object(memory, "get_db", side_effect=lambda: aiosqlite.connect(self.db_path)):
+            recalled, _ = await memory.recall_memories(
+                "记忆和理解怎样变化", query_keywords=[], threshold=0.45,
             )
+            recent, _ = await memory.build_surfacing_memories(
+                topic="", keywords=[], max_total=8,
+            )
+        self.assertIn(item["id"], [m["id"] for m in recalled])
+        self.assertNotIn(item["id"], [m["id"] for m in recent])
+
+    async def test_archive_keeps_atom_but_disables_recall(self):
+        item = await recent_thoughts.save_recent_thought(
+            "aion", "这条想法暂时不再需要参与召回了。", source_action="home_dynamics",
+        )
         self.assertTrue(await recent_thoughts.archive_recent_thought("aion", item["id"]))
         self.assertFalse(await recent_thoughts.archive_recent_thought("aion", item["id"]))
-        with patch.object(recent_thoughts.time, "time", return_value=now + 20 * 86400):
-            self.assertEqual("", await recent_thoughts.take_recent_thoughts_for_chat("aion"))
-        self.assertEqual("archived", (await recent_thoughts.list_recent_thoughts("aion"))[0]["status"])
+        self.assertEqual([], await recent_thoughts.list_recent_thoughts("aion"))
+        async with aiosqlite.connect(self.db_path) as db:
+            row = await (await db.execute(
+                "SELECT archive_state,embedding FROM memories WHERE id=?", (item["id"],)
+            )).fetchone()
+        self.assertEqual("cold", row[0])
+        self.assertIsNotNone(row[1])
 
-        with patch.object(recent_thoughts.time, "time", return_value=now):
-            await recent_thoughts.save_recent_thought(
-                "aion", "这是一条日后会自然到期的旧想法。", source_action="home_dynamics",
+    async def test_legacy_aion_thoughts_migrate_without_duplicates(self):
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("""
+                CREATE TABLE recent_thoughts (
+                    id TEXT PRIMARY KEY, actor TEXT, content TEXT,
+                    source_action TEXT,source_ref TEXT,status TEXT,created_at REAL
+                )
+            """)
+            await db.execute(
+                "INSERT INTO recent_thoughts VALUES(?,?,?,?,?,?,?)",
+                ("thought_old_1", "aion", "一段以前留下的想法，应该还记得。",
+                 "memory_browse", "day_1", "active", time.time()-3600),
             )
-        with patch.object(recent_thoughts.time, "time", return_value=now + 20 * 86400):
-            rows = await recent_thoughts.list_recent_thoughts("aion")
-        self.assertTrue(any(row["status"] == "expired" for row in rows))
-
+            await db.commit()
+        first = await recent_thoughts.list_recent_thoughts("aion")
+        second = await recent_thoughts.list_recent_thoughts("aion")
+        self.assertEqual(1, len(first))
+        self.assertEqual(first, second)
+        self.assertEqual("mem_lan_thought_old_1", first[0]["id"])
+        async with aiosqlite.connect(self.db_path) as db:
+            legacy_count = (await (await db.execute(
+                "SELECT COUNT(*) FROM recent_thoughts WHERE actor='aion'"
+            )).fetchone())[0]
+            memory_count = (await (await db.execute(
+                "SELECT COUNT(*) FROM memories WHERE type='lan_thought'"
+            )).fetchone())[0]
+        self.assertEqual(0, legacy_count)
+        self.assertEqual(1, memory_count)
 
 class DiaryBrowseTests(unittest.IsolatedAsyncioTestCase):
     async def test_home_dynamics_can_choose_silence(self):

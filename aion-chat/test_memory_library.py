@@ -68,6 +68,27 @@ class MemoryLibraryTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual([m['id'] for m in cold['items']], ['one'])
         self.assertEqual(self.client.get('/api/memory-library/chatroom/other').status_code, 404)
 
+    async def test_lan_thought_is_separate_and_never_counted_as_long_term(self):
+        async with self.connect() as db:
+            await db.execute(
+                "INSERT INTO memories (id,content,type,source_msg_id,archive_state) "
+                "VALUES (?,?,?,?,?)",
+                ('thought-1','岚的想法：值得以后继续琢磨。','lan_thought','[]','active'),
+            )
+            await db.commit()
+        thought = self.client.get('/api/memory-library/main?kind=lan_thought').json()
+        self.assertEqual([row['id'] for row in thought['items']], ['thought-1'])
+        self.assertEqual(thought['items'][0]['memory_kind'], 'lan_thought')
+        long_term = self.client.get('/api/memory-library/main?kind=long_term').json()
+        self.assertNotIn('thought-1', [row['id'] for row in long_term['items']])
+        self.assertEqual(
+            400,
+            self.client.post(
+                '/api/memory-library/chatroom',
+                json={'content':'不是岚的记忆','memory_kind':'lan_thought'},
+            ).status_code,
+        )
+
     async def test_large_library_returns_only_requested_page_without_vectors(self):
         async with self.connect() as db:
             await db.executemany('INSERT INTO memories (id,content,embedding) VALUES (?,?,?)',

@@ -74,6 +74,23 @@ class MainMemoryKindToggleTests(unittest.TestCase):
         self.assertTrue(all("embedding" not in sql.lower() for sql, _ in update_statements))
 
 
+    def test_new_thought_kind_is_selectable_without_reembedding(self):
+        app = FastAPI()
+        app.include_router(memory_routes.router)
+        client = TestClient(app)
+        fake_db = _FakeDb()
+        with patch.object(memory_routes, "get_db", return_value=_FakeDbContext(fake_db)), \
+             patch.object(memory_routes, "get_embedding", new=AsyncMock()) as embedding:
+            response = client.patch(
+                '/api/memories/mem-1/kind',
+                json={'memory_kind':'lan_thought'},
+            )
+        self.assertEqual(200, response.status_code)
+        self.assertEqual('lan_thought', response.json()['memory_kind'])
+        self.assertEqual('岚的想法', response.json()['memory_kind_label'])
+        embedding.assert_not_awaited()
+
+
 class MemoryKindToggleFrontendTests(unittest.TestCase):
     def test_memory_labels_open_selection_menus_instead_of_toggling_directly(self):
         main_html = (ROOT / "static" / "memory-library.js").read_text(encoding="utf-8")

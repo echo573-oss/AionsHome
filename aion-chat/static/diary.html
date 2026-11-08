@@ -307,7 +307,7 @@ body[data-theme="light"] .diary-input {
         <span class="recent-thoughts-chevron" aria-hidden="true">⌄</span>
       </button>
       <div id="recentThoughtsBody" class="recent-thoughts-body" hidden>
-        <p class="recent-thoughts-note">岚在自主活动里想留下的念头。可以自己慢慢想，也可能在以后的聊天里自然提起。</p>
+        <p class="recent-thoughts-note">岚主动留下的念头已进入原子记忆。未来聊到相关话题时，可以自然想起来；归档后保留记录，但不再参与召回。</p>
         <div id="recentThoughtsList" class="recent-thoughts-list"></div>
       </div>
     </section>
@@ -703,7 +703,7 @@ async function loadRecentThoughts() {
       return `<article class="recent-thought">
         <div class="recent-thought-meta"><span>${escHtml(date)} · ${escHtml(source)}</span>
           <button type="button" class="recent-thought-dismiss" data-thought-id="${escHtml(item.id)}"
-            aria-label="收起这条想法" title="收起这条想法">收起</button>
+            aria-label="将这条想法归档" title="归档后不再参与召回">归档</button>
         </div>
         <p>${escHtml(item.content)}</p>
       </article>`;
