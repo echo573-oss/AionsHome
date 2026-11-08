@@ -96,7 +96,7 @@ async def list_recent_thoughts(actor: str, limit: int = 30) -> list[dict]:
         now = time.time()
         await db.execute(
             "UPDATE recent_thoughts SET status='expired' "
-            "WHERE status='active' AND expires_at<=?", (now,),
+            "WHERE status IN ('active','resting') AND expires_at<=?", (now,),
         )
         await db.commit()
         cursor = await db.execute(
@@ -132,7 +132,7 @@ async def take_recent_thoughts_for_chat(actor: str = "aion", limit: int = 2) -> 
         await ensure_recent_thoughts_table(db)
         await db.execute(
             "UPDATE recent_thoughts SET status='expired' "
-            "WHERE status='active' AND expires_at<=?", (now,),
+            "WHERE status IN ('active','resting') AND expires_at<=?", (now,),
         )
         cur = await db.execute(
             "SELECT id,content,source_action,created_at,shown_count FROM recent_thoughts "
