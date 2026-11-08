@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>表单资料与安全凭据 · AionsHome</title>
+<link rel="stylesheet" href="/static/form-vault.css?v=1">
+</head>
+<body>
+<main>
+  <header>
+    <a href="/user-profile" class="back">← 返回</a>
+    <div>
+      <h1>表单资料与安全凭据</h1>
+      <p>本机专用 · Windows DPAPI 加密 · 不提供聊天模型明文密码</p>
+    </div>
+  </header>
+  <div id="status" role="status" class="status">正在检查本机资料库…</div>
+  <div class="columns" id="workspace" hidden>
+    <section>
+      <h2>常用表单资料</h2>
+      <p class="hint">在这里保存姓名、地址与联系方式，之后可以让浏览器填表能力按需使用。</p>
+      <form id="profileForm" autocomplete="off">
+        <input type="hidden" id="profileId">
+        <label>这套资料叫什么<input id="profileLabel" name="label" maxlength="64" required placeholder="例如：日常收件资料"></label>
+        <div class="two">
+          <label>姓名<input data-field="full_name" maxlength="200" autocomplete="off"></label>
+          <label>电话<input data-field="phone" maxlength="200" autocomplete="off"></label>
+          <label>电子邮件<input data-field="email" maxlength="200" autocomplete="off"></label>
+          <label>公司<input data-field="company" maxlength="200" autocomplete="off"></label>
+          <label>国家/地区<input data-field="country" maxlength="200" autocomplete="off"></label>
+          <label>省份<input data-field="province" maxlength="200" autocomplete="off"></label>
+          <label>城市<input data-field="city" maxlength="200" autocomplete="off"></label>
+          <label>区县<input data-field="district" maxlength="200" autocomplete="off"></label>
+          <label>邮政编码<input data-field="postal_code" maxlength="200" autocomplete="off"></label>
+        </div>
+        <label>街道和详细地址<input data-field="street" maxlength="200" autocomplete="off"></label>
+        <label>补充地址<input data-field="address2" maxlength="200" autocomplete="off"></label>
+        <div class="actions">
+          <button type="submit" class="primary">保存资料</button>
+          <button type="button" id="resetProfile">清空表单</button>
+        </div>
+      </form>
+      <div id="profiles" class="items"></div>
+    </section>
+    <section>
+      <h2>网站登录凭据</h2>
+      <p class="hint">网站须使用 HTTPS。密码由本机 Windows 用户的 DPAPI 加密保存；页面与 API 都不会回显密码。</p>
+      <form id="loginForm" autocomplete="off">
+        <label>账号备注<input id="loginLabel" maxlength="64" placeholder="例如：常用购物账号" required></label>
+        <label>网站根地址<input id="loginSite" type="url" maxlength="300" placeholder="https://example.com" autocomplete="off" required></label>
+        <label>用户名<input id="loginUsername" maxlength="256" autocomplete="off" required></label>
+        <label>密码<input id="loginPassword" type="password" maxlength="4096" autocomplete="new-password" required></label>
+        <button class="primary" type="submit">加密保存账号</button>
+      </form>
+      <div id="logins" class="items"></div>
+      <p class="hint note">当前仅保存、编辑表单资料和管理登录项。自动填表与网页登录将在下一阶段接入浏览器执行组件。更换 Windows 用户或迁移电脑前，需要单独规划凭据迁移。</p>
+    </section>
+  </div>
+</main>
+<script src="/static/form-vault.js?v=1"></script>
+</body>
+</html>

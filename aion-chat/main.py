@@ -54,6 +54,7 @@ from schedule import schedule_mgr
 from routes import chat, cam as cam_routes, files, settings, memories
 from routes import memory_library
 from routes import user_profile
+from routes import form_vault as form_vault_routes
 import post_sentinel
 import kitchen_sentinel
 from routes import kitchen as kitchen_routes
@@ -359,6 +360,7 @@ app.include_router(settings.router)
 app.include_router(memories.router)
 app.include_router(memory_library.router)
 app.include_router(user_profile.router)
+app.include_router(form_vault_routes.router)
 app.include_router(kitchen_routes.router)
 app.include_router(voice_routes.router)
 app.include_router(music_routes.router)
@@ -525,6 +527,15 @@ async def memory_page():
 @app.get("/user-profile")
 async def user_profile_page():
     return FileResponse(BASE_DIR / "static" / "user-profile.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
+@app.get("/form-vault")
+async def form_vault_page(request: Request):
+    form_vault_routes.require_local(request)
+    return FileResponse(
+        BASE_DIR / "static" / "form-vault.html",
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+    )
 
 @app.get("/memory-compression")
 async def memory_compression_page():
