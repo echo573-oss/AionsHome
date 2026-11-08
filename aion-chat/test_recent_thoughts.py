@@ -85,6 +85,24 @@ class LanThoughtMemoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("autonomy:diary_browse:di_aion_1", record[4])
         self.assertEqual(0.8, record[5])
 
+    async def test_vector_recall_finds_thought_but_recency_does_not_push_it(self):
+        import memory
+
+        item = await recent_thoughts.save_recent_thought(
+            "aion", "记忆应当保留理解变化的过程，而不仅是当时的结论。",
+            source_action="diary_browse", source_ref="di_aion_history",
+        )
+        # The same main-memory vector search used in real chat.
+        with patch.object(memory, "get_db", side_effect=lambda: aiosqlite.connect(self.db_path)):
+            recalled, _ = await memory.recall_memories(
+                "记忆和理解怎样变化", query_keywords=[], threshold=0.45,
+            )
+            recent, _ = await memory.build_surfacing_memories(
+                topic="", keywords=[], max_total=8,
+            )
+        self.assertIn(item["id"], [m["id"] for m in recalled])
+        self.assertNotIn(item["id"], [m["id"] for m in recent])
+
     async def test_archive_keeps_atom_but_disables_recall(self):
         item = await recent_thoughts.save_recent_thought(
             "aion", "这条想法暂时不再需要参与召回了。", source_action="home_dynamics",
