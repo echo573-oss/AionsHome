@@ -17,6 +17,7 @@ from autonomy_state import (
     update_actor_config,
 )
 from ws import manager
+from recent_thoughts import list_recent_thoughts, archive_recent_thought
 
 
 router = APIRouter(prefix="/api/idle-autonomy", tags=["idle-autonomy"])
@@ -52,6 +53,21 @@ async def read_autonomy_status():
         for key, label in ACTION_DEFS.items()
     ]
     return payload
+
+
+@router.get("/recent-thoughts")
+async def read_recent_thoughts(actor: str = "aion", limit: int = 30):
+    actor = _actor(actor)
+    return {"actor": actor, "items": await list_recent_thoughts(actor, limit=limit)}
+
+
+@router.delete("/recent-thoughts/{thought_id}")
+async def dismiss_recent_thought(thought_id: str, actor: str = "aion"):
+    actor = _actor(actor)
+    if not await archive_recent_thought(actor, thought_id):
+        raise HTTPException(status_code=404, detail="thought not found")
+    await manager.broadcast({"type": "recent_thoughts_changed", "data": {"actor": actor}})
+    return {"ok": True, "id": thought_id}
 
 
 @router.get("/niches")
