@@ -73,6 +73,29 @@ class DiaryResilienceTests(unittest.TestCase):
             self.assertEqual(_cleanup_model_raw_responses(log_dir, now), 0)
 
 
+class OptionalDigestDiaryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_diary_can_be_skipped_without_model_failure(self):
+        async def fake_call(*_args, **_kwargs):
+            return '{"write_diary":false,"diary":{"title":"","content":"","mood":""},"post_moment":false}'
+
+        with patch("ai_providers.simple_ai_call", new=fake_call):
+            data, state = await _generate_digest_diary([], "primary-model")
+
+        self.assertTrue(state["ok"])
+        self.assertIs(data["write_diary"], False)
+        self.assertEqual("", data["diary"]["content"])
+
+    async def test_blank_diary_without_explicit_skip_is_still_an_error(self):
+        async def fake_call(*_args, **_kwargs):
+            return '{"diary":{"title":"","content":"","mood":""},"post_moment":false}'
+
+        with patch("ai_providers.simple_ai_call", new=fake_call):
+            data, state = await _generate_digest_diary([], "primary-model")
+
+        self.assertIsNone(data)
+        self.assertFalse(state["ok"])
+
+
 class DigestDiaryCircuitBreakerTests(unittest.IsolatedAsyncioTestCase):
     async def test_failure_calls_model_only_once(self):
         calls = []
