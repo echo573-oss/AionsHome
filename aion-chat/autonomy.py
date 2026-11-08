@@ -1717,7 +1717,7 @@ async def _write_home_dynamics_diary(actor: str, result: dict, text: str) -> dic
     title = str(result.get("diary_title") or "").strip() or "看了看家里的近况"
     content = str(result.get("diary_content") or "").strip()
     if not content:
-        content = f"刚刚翻看了近6小时的家庭动态，心里留下了一点想法。\n\n{text}"
+        return None
     diary = await save_diary_entry(
         author=actor,
         title=title,
@@ -1768,21 +1768,22 @@ async def _run_home_dynamics(actor: str) -> dict:
     result = await _ask_actor_json(actor, (
         "[查看近期家庭动态]\n"
         "下面是近6小时的家庭时间轴，包括朋友圈、日记、礼物和空闲行为。"
-        "看完后你必须选择并执行一个行动，不能静默。"
+        "看完以后如果真有想做的事，可以选择一项；也可以选 none，什么都不做。"
         "可选行动：reply_moment（回复某条朋友圈）、group_tease（在群聊里调侃另一个角色）、"
-        "private_message（私聊用户一条消息）、write_diary（写一篇短日记）。只返回 JSON。\n\n"
+        "private_message（私聊用户一条消息）、write_diary（写一篇短日记）、none（只是看看）。"
+        "不要为了完成动作强行写日记或发消息。只返回 JSON。\n\n"
         f"{text}\n\n"
         "如果选择 reply_moment，target_index 必须指向一条朋友圈，且不要回复你自己的朋友圈。\n"
         "如果选择 group_tease，target_index 可以指向触发你吐槽的动态，并填写 group_message。\n"
         "如果选择 private_message，填写 private_message。\n"
         "如果选择 write_diary，填写 diary_title、diary_content 和 diary_mood。\n\n"
-        '格式：{"after_read_action":"reply_moment/group_tease/private_message/write_diary",'
+        '格式：{"after_read_action":"reply_moment/group_tease/private_message/write_diary/none",'
         '"target_index":1,"group_message":"","private_message":"","diary_title":"","diary_content":"","diary_mood":"",'
         '"reason":"一句话理由"}'
     ))
     action = str(result.get("after_read_action") or "").strip()
-    if action not in {"reply_moment", "group_tease", "private_message", "write_diary"}:
-        action = "write_diary"
+    if action not in {"reply_moment", "group_tease", "private_message", "write_diary", "none"}:
+        action = "none"
     event = await append_idle_event(
         actor, "home_dynamics", f"{actor_name}查看了近期家庭动态",
         _clip(str(result.get("reason") or text), 300),
@@ -1801,15 +1802,13 @@ async def _run_home_dynamics(actor: str) -> dict:
                     result_type="moment_comment", result_id=comment["id"],
                 )
                 return {"event": event, "comment": comment}
-        diary = await _write_home_dynamics_diary(actor, result, text)
-        return {"event": event, "diary": diary}
+        return {"event": event}
 
     if action == "group_tease":
         teased = await _run_home_group_tease(actor, result, items, text)
         if teased:
             return {"event": event, "group_tease": teased}
-        diary = await _write_home_dynamics_diary(actor, result, text)
-        return {"event": event, "diary": diary}
+        return {"event": event}
 
     if action == "private_message":
         msg = await _save_private_message(actor, str(result.get("private_message") or "").strip())
@@ -1819,11 +1818,12 @@ async def _run_home_dynamics(actor: str) -> dict:
                 _clip(msg.get("content") or ""), result_type="message", result_id=msg["id"],
             )
             return {"event": event, "message": msg}
-        diary = await _write_home_dynamics_diary(actor, result, text)
-        return {"event": event, "diary": diary}
+        return {"event": event}
 
-    diary = await _write_home_dynamics_diary(actor, result, text)
-    return {"event": event, "diary": diary}
+    if action == "write_diary":
+        diary = await _write_home_dynamics_diary(actor, result, text)
+        return {"event": event, "diary": diary} if diary else {"event": event}
+    return {"event": event}
 
 
 async def _run_xhs_roam(actor: str) -> dict:
