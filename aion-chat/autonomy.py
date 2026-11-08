@@ -1451,7 +1451,7 @@ async def _run_diary_browse(actor: str) -> dict:
 
 
 async def _maybe_save_autonomous_thought(
-    actor: str, action: str, selected: dict, result: Any, session_id: str,
+    actor: str, action: str, result: Any, session_id: str,
     *, proposed: str = "",
 ) -> dict | None:
     """Persist a thought already chosen during the activity, without another model call."""
@@ -2331,7 +2331,10 @@ async def _run_actor_once(actor: str, *, manual: bool = False, idle_minutes: int
             result = await visit_friend_board(actor)
         else:
             result = {}
-        outcome = str(getattr(result, "outcome", "finished"))
+        outcome = str(
+            result.get("outcome", "finished") if isinstance(result, dict)
+            else getattr(result, "outcome", "finished")
+        )
         trace = list(getattr(result, "action_trace", []) or [])
         card = getattr(result, "card", None)
         shared = bool(getattr(result, "message", None))
@@ -2411,7 +2414,7 @@ async def _run_actor_once(actor: str, *, manual: bool = False, idle_minutes: int
     if ok and outcome not in {"round_limit", "failed", "no_direction", "tool_failed"}:
         try:
             recent_thought = await _maybe_save_autonomous_thought(
-                actor, action, selected, result, session_id,
+                actor, action, result, session_id,
                 proposed=thought_slot.get("text", ""),
             )
         except Exception as exc:
