@@ -95,6 +95,18 @@ class MemoryRecallTimeFormatTests(unittest.TestCase):
         self.assertEqual(rendered.count("2026-04-12"), 1)
         self.assertTrue(rendered.startswith("- 记忆（发生：2026-04-12 08:00-09:00）：去医院复查。"))
 
+    def test_recalled_memory_does_not_truncate_long_content_by_default(self):
+        long_content = "知在很长的一段回忆里写道：" + "重要内容" * 100
+        rendered = memory.format_recalled_memories_for_prompt([{"content": long_content}])
+        self.assertIn(long_content, rendered)
+        self.assertFalse(rendered.endswith("..."))
+
+    def test_recalled_memory_with_explicit_limit_truncates_cleanly(self):
+        long_content = "一二三四五六七八九十" * 30
+        rendered = memory.format_recalled_memories_for_prompt([{"content": long_content}], limit=50)
+        self.assertTrue(rendered.endswith("..."))
+        self.assertLessEqual(len(rendered), 70)
+
 
 if __name__ == "__main__":
     unittest.main()

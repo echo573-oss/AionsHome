@@ -706,7 +706,7 @@ class ScheduleManager:
             elif is_app_checkpoint:
                 trigger_prompt += "\n本次手机屏幕未能在等待时间内取得，请根据应用状态和对话继续判断。"
 
-            recalled, _ = await recall_memories(trigger_prompt[:300])
+            recalled, _ = await recall_memories(trigger_prompt[:300], worldbook_persona=wb.get("ai_persona"))
             debug_recalled = recalled
             mem_inject = []
             if recalled:

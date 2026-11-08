@@ -1984,7 +1984,7 @@ class CameraMonitor:
         core_prompt = "\n".join(core_parts)
 
         recall_query = core_prompt[:300]
-        recalled, _ = await recall_memories(recall_query)
+        recalled, _ = await recall_memories(recall_query, worldbook_persona=wb.get("ai_persona"))
         mem_inject = []
         if recalled:
             mem_lines = format_recalled_memories_for_prompt(recalled)

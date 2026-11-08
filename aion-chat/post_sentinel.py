@@ -259,6 +259,82 @@ async def invalidate_pending():
     await stop_initialization()
 
 
+async def prune_sources(source_ids: set[str] | list[str] = (), *, parent_id: str = "") -> bool:
+    """When conversations or messages are deleted, remove their sources from post_sentinel_document and jobs."""
+    source_set = set(source_ids) if source_ids else set()
+    now = time.time()
+    changed = False
+    try:
+        await ensure_schema()
+        async with get_db() as db:
+            await db.execute("BEGIN IMMEDIATE")
+            # 1. 收集并清理 parent_id 对应的 jobs 与 source tags
+            if parent_id:
+                cur = await db.execute(
+                    "SELECT source_id, scope, message_id FROM post_sentinel_jobs WHERE parent_id=?",
+                    (parent_id,),
+                )
+                for r in await cur.fetchall():
+                    if isinstance(r, (tuple, list)):
+                        sid, scope, mid = r[0], r[1], r[2]
+                    else:
+                        sid, scope, mid = r["source_id"], r["scope"], r["message_id"]
+                    source_set.add(f"{scope}:{mid}")
+                    if sid:
+                        source_set.add(sid)
+                await db.execute("DELETE FROM post_sentinel_jobs WHERE parent_id=?", (parent_id,))
+
+            # 2. 清理由 message_id 对应的 jobs
+            if source_set:
+                msg_ids = [s.split(":", 1)[1] if ":" in s else s for s in source_set]
+                for chunk_start in range(0, len(msg_ids), 100):
+                    chunk = msg_ids[chunk_start:chunk_start + 100]
+                    placeholders = ",".join("?" for _ in chunk)
+                    await db.execute(f"DELETE FROM post_sentinel_jobs WHERE message_id IN ({placeholders})", tuple(chunk))
+
+            # 3. 对齐画像文档中的 entries 和 current_state
+            row, document = await _read(db)
+            entries = document.get("entries") or {}
+            for key, entry in list(entries.items()):
+                sources = entry.get("sources")
+                if isinstance(sources, list) and sources:
+                    remaining = [s for s in sources if s not in source_set]
+                    if len(remaining) != len(sources):
+                        if not remaining:
+                            # 依据全部来源于已删除对话/消息：标记为已删除
+                            entries[key] = {**entry, "deleted": True, "locked": True, "sources": [], "updated_at": now}
+                        else:
+                            entries[key] = {**entry, "sources": remaining, "updated_at": now}
+                        changed = True
+
+            state = document.get("current_state")
+            if isinstance(state, dict):
+                state_sources = state.get("sources")
+                if isinstance(state_sources, list) and state_sources:
+                    remaining_state = [s for s in state_sources if s not in source_set]
+                    if len(remaining_state) != len(state_sources):
+                        if not remaining_state:
+                            document["current_state"] = None
+                            document["state_cleared_at"] = now
+                        else:
+                            state["sources"] = remaining_state
+                        changed = True
+
+            if changed:
+                document["entries"] = entries
+                await db.execute(
+                    "UPDATE post_sentinel_document SET payload=?, revision=revision+1, updated_at=? WHERE id=1",
+                    (json.dumps(document, ensure_ascii=False), now),
+                )
+            await db.commit()
+
+        if changed:
+            await _notify_changed()
+    except Exception:
+        log.warning("Post-sentinel prune_sources error", exc_info=True)
+    return changed
+
+
 def wake():
     if _wake:
         _wake.set()

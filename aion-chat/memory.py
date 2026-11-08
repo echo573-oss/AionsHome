@@ -111,15 +111,17 @@ def _memory_time_payload(mem: dict) -> dict:
     return {"memory_time": None, "memory_time_end": None, "memory_time_label": ""}
 
 
-def _memory_line_with_evidence(mem: dict, limit: int = 220) -> str:
-    content = str(mem.get("content") or "").strip()[:limit]
+def _memory_line_with_evidence(mem: dict, limit: int | None = None) -> str:
+    content = str(mem.get("content") or "").strip()
+    if limit is not None and len(content) > limit:
+        content = content[:limit].rstrip() + "..."
     time_label = mem.get("memory_time_label") or _memory_time_payload(mem).get("memory_time_label")
     if time_label:
         content = _LEADING_DATE_RE.sub("", content, count=1).strip()
     return f"- 记忆（{time_label}）：{content}" if time_label else f"- 记忆：{content}"
 
 
-def format_recalled_memories_for_prompt(memories: list[dict], limit: int = 220) -> str:
+def format_recalled_memories_for_prompt(memories: list[dict], limit: int | None = None) -> str:
     return "\n".join(_memory_line_with_evidence(mem, limit) for mem in memories)
 
 
@@ -288,14 +290,22 @@ def _keyword_match_score(query_keywords: list[str], mem_keywords_json: str) -> f
 
 
 # ── 记忆召回（向量 + 关键词 + 重要度 综合评分）────
+def worldbook_anchor_memory_ids(persona: str | None) -> set[str]:
+    """只识别人设中正式列出的 Anchor，跳过正文里随口提到的编号。"""
+    numbers = re.findall(r"(?m)^[ \t]*NA-([0-9]{2})[ \t]*[｜|]", persona or "")
+    return {f"mem_lan_na{number}" for number in numbers}
+
+
 @timed("main_recall")
 async def recall_memories(query_text: str, query_keywords: list[str] = None,
-                          top_k: int = 5, threshold: float = 0.45) -> tuple[list[dict], list[dict]]:
+                          top_k: int = 5, threshold: float = 0.45, *,
+                          worldbook_persona: str | None = None) -> tuple[list[dict], list[dict]]:
     """
     综合评分 = 向量相似度×0.6 + 关键词命中率×0.3 + 重要度×0.1
     threshold 为最终得分门槛。
     返回 (matched, debug_top6): matched 为达标结果, debug_top6 为得分最高的前6条（含未达标）
     """
+    excluded = json.dumps(sorted(worldbook_anchor_memory_ids(worldbook_persona)))
     query_vec = await get_embedding(query_text, timeout=4)
     if not query_vec:
         return [], []
@@ -307,7 +317,9 @@ async def recall_memories(query_text: str, query_keywords: list[str] = None,
             "SELECT id, content, type, created_at, source_conv, embedding, keywords, importance, "
             "source_start_ts, source_end_ts, source_msg_id, evidence_summary "
             "FROM memories WHERE embedding IS NOT NULL "
-            "AND COALESCE(archive_state,'active')='active'"
+            "AND COALESCE(archive_state,'active')='active' "
+            "AND id NOT IN (SELECT value FROM json_each(?))",
+            (excluded,),
         )
         rows = await cur.fetchall()
     all_scored = []
@@ -439,7 +451,8 @@ async def fetch_source_details(memories: list[dict], keywords: list[str]) -> str
 # ── 背景记忆浮现：unresolved + 话题相关 + 近期补充 ───
 @timed("main_surfacing")
 async def build_surfacing_memories(topic: str = "", keywords: list[str] = None,
-                                    max_total: int = 8) -> tuple[list[dict], set]:
+                                    max_total: int = 8, *,
+                                    worldbook_persona: str | None = None) -> tuple[list[dict], set]:
     """
     构建 [背景记忆] 注入内容。
     策略：
@@ -448,6 +461,7 @@ async def build_surfacing_memories(topic: str = "", keywords: list[str] = None,
       3. 近期补充（最近 3 天，补满 max_total）
     返回 (memories_list, surfaced_ids) 供后续 RAG 去重。
     """
+    excluded = json.dumps(sorted(worldbook_anchor_memory_ids(worldbook_persona)))
     surfaced_ids = set()
     result = []
 
@@ -459,7 +473,9 @@ async def build_surfacing_memories(topic: str = "", keywords: list[str] = None,
             "source_start_ts, source_end_ts, evidence_summary "
             "FROM memories WHERE unresolved = 1 "
             "AND COALESCE(archive_state,'active')='active' "
-            "ORDER BY created_at DESC LIMIT 2"
+            "AND id NOT IN (SELECT value FROM json_each(?)) "
+            "ORDER BY created_at DESC LIMIT 2",
+            (excluded,),
         )
         unresolved_rows = await cur.fetchall()
     for row in unresolved_rows:
@@ -482,7 +498,9 @@ async def build_surfacing_memories(topic: str = "", keywords: list[str] = None,
                     "SELECT id, content, type, created_at, embedding, keywords, importance, "
                     "source_start_ts, source_end_ts, evidence_summary "
                     "FROM memories WHERE embedding IS NOT NULL "
-                    "AND COALESCE(archive_state,'active')='active'"
+                    "AND COALESCE(archive_state,'active')='active' "
+                    "AND id NOT IN (SELECT value FROM json_each(?))",
+                    (excluded,),
                 )
                 rows = await cur.fetchall()
             scored = []
@@ -519,8 +537,9 @@ async def build_surfacing_memories(topic: str = "", keywords: list[str] = None,
                 "SELECT id, content, type, created_at, source_start_ts, source_end_ts, evidence_summary FROM memories "
                 "WHERE COALESCE(archive_state,'active')='active' "
                 "AND COALESCE(source_end_ts, source_start_ts, created_at) > ? "
+                "AND id NOT IN (SELECT value FROM json_each(?)) "
                 "ORDER BY COALESCE(source_end_ts, source_start_ts, created_at) DESC LIMIT ?",
-                (three_days_ago, max_total)
+                (three_days_ago, excluded, max_total)
             )
             recent_rows = await cur.fetchall()
         for row in recent_rows:

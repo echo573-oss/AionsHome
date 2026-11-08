@@ -91,6 +91,35 @@ class FallbackSaveTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await fx.rows(), [])
 
 
+class PrivateMemoryRecordTest(unittest.IsolatedAsyncioTestCase):
+    async def test_memory_links_to_saved_trigger_and_reply(self):
+        async with _DbFixture() as fx:
+            await fx.db.executescript("""
+                CREATE TABLE memories (id TEXT PRIMARY KEY, content TEXT, type TEXT,
+                    created_at REAL, source_conv TEXT, embedding BLOB, keywords TEXT,
+                    importance REAL, source_start_ts REAL, source_end_ts REAL,
+                    unresolved INTEGER, source_msg_id TEXT);
+                INSERT INTO messages VALUES ('user','conv','user','Original',1,'','');
+                INSERT INTO messages VALUES ('reply','conv','assistant','Reply',2,'','');
+            """)
+            with patch.object(chat_routes, "get_embedding", new=AsyncMock(return_value=None)):
+                clean, pending = await chat_routes._prepare_private_memory_records(
+                    "Reply [MEMORY:First card] [MEMORY:Second card]"
+                )
+            self.assertEqual(clean, "Reply")
+            saved = await chat_routes._insert_private_memory_records(
+                fx.db, "conv", "user", "reply", 2, pending,
+            )
+            rows = await (await fx.db.execute(
+                "SELECT source_msg_id,source_start_ts,source_end_ts FROM memories"
+            )).fetchall()
+            self.assertEqual(len({item["id"] for item in saved}), 2)
+            self.assertEqual(rows, [('["private:user", "private:reply"]', 1.0, 2.0)] * 2)
+            queue = asyncio.Queue()
+            await chat_routes._publish_private_memory_records(saved, "reply", queue)
+            self.assertEqual((await queue.get())["mem_id"], saved[0]["id"])
+
+
 class GenerationPathsUseFallbackTest(unittest.TestCase):
     def test_every_bg_generate_falls_back_on_exception(self):
         """send / regenerate / edit-resend 三条生成路径的 except 都要兜底存正文。"""

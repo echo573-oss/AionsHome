@@ -285,7 +285,7 @@ async def stream_codex_app_server(
                 final_text = completed_text
 
             if method == "error":
-                if image_results and params.get("willRetry") is True:
+                if params.get("willRetry") is True:
                     yield CodexAppServerEvent("activity")
                     continue
                 error = params.get("error") or params

@@ -361,6 +361,7 @@ async def build_memory_blocks(
     recent_messages: list[dict] = None,
     *,
     use_main_memories: bool = True,
+    worldbook_persona: str | None = None,
     chatroom_recall_fn=None,
     chatroom_surfacing_fn=None,
     chatroom_source_fn=None,
@@ -429,10 +430,10 @@ async def build_memory_blocks(
     task_labels = []  # 跟踪每个 task 对应的功能
 
     if use_main_memories:
-        tasks.append(build_surfacing_memories(topic, recall_keywords))
+        tasks.append(build_surfacing_memories(topic, recall_keywords, worldbook_persona=worldbook_persona))
         task_labels.append("main_surfacing")
         if recall_query:
-            tasks.append(recall_memories(recall_query, query_keywords=recall_keywords))
+            tasks.append(recall_memories(recall_query, query_keywords=recall_keywords, worldbook_persona=worldbook_persona))
         else:
             async def _empty_recall():
                 return ([], [])
@@ -491,7 +492,7 @@ async def build_memory_blocks(
             recalled = recalled[:max_recalled_memories]
 
     if recalled:
-        mem_lines = format_recalled_memories_for_prompt(recalled, limit=200)
+        mem_lines = format_recalled_memories_for_prompt(recalled)
         memory_block = f"[相关记忆]\n你脑海中与当前话题相关的记忆：\n{mem_lines}"
         if include_source_details and (
             is_search_needed or digest_result.get("require_detail")

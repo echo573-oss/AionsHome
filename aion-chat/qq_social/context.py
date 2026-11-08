@@ -93,7 +93,7 @@ def clean_reply(text):
     return text[:1800]
 
 
-def _fallback_memories(actor, query):
+def _fallback_memories(actor, query, excluded_ids=()):
     """Read-only lexical fallback also handles memories without embeddings."""
     from config import DB_PATH
     table = 'memories' if actor == 'aion' else 'chatroom_memories'
@@ -102,7 +102,11 @@ def _fallback_memories(actor, query):
         where += " AND scope='connor'"
     with sqlite3.connect(Path(DB_PATH).as_uri() + '?mode=ro', uri=True, timeout=2) as db:
         db.row_factory = sqlite3.Row
-        rows = [dict(r) for r in db.execute(f'SELECT id,content,created_at,importance FROM {table} WHERE {where}')]
+        rows = [
+            dict(row)
+            for row in db.execute(f'SELECT id,content,created_at,importance FROM {table} WHERE {where}')
+            if row['id'] not in excluded_ids
+        ]
     tokens = set(re.findall(r'[a-zA-Z]{3,}|[\u4e00-\u9fff]{2}', query.lower()))
     rows.sort(key=lambda r: (sum(t in r['content'].lower() for t in tokens), float(r.get('importance') or 0), r['created_at']), reverse=True)
     return rows[:6]
@@ -111,20 +115,21 @@ def _fallback_memories(actor, query):
 async def private_context(actor, query):
     from chatroom import _read_connor_persona, recall_chatroom_memories
     from context_builder import fetch_merged_timeline
-    from memory import recall_memories
+    from memory import recall_memories, worldbook_anchor_memory_ids
     cfg, models, wb, names = home_config()
     model = select_model(actor, cfg, models)
     persona = wb.get('ai_persona', '') if actor == 'aion' else _read_connor_persona()
     timeline = await fetch_merged_timeline(actor, 20)
     try:
         if actor == 'aion':
-            memories, _ = await asyncio.wait_for(recall_memories(query, top_k=6), 18)
+            memories, _ = await asyncio.wait_for(recall_memories(query, top_k=6, worldbook_persona=persona), 18)
         else:
             memories = await asyncio.wait_for(recall_chatroom_memories(query, scope='connor', top_k=6, min_results=3), 18)
     except (TimeoutError, OSError, ValueError):
         memories = []
     if not memories:
-        memories = await asyncio.to_thread(_fallback_memories, actor, query)
+        excluded_ids = worldbook_anchor_memory_ids(persona) if actor == 'aion' else set()
+        memories = await asyncio.to_thread(_fallback_memories, actor, query, excluded_ids)
     private_lines = []
     for m in timeline:
         sender = m.get('sender', m.get('role','user'))
