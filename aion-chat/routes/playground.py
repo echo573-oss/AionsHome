@@ -46,6 +46,39 @@ class ChatReadToolsRequest(BaseModel):
     actor: str = "aion"
     tools: list[str]
 
+class ChatWriteToolsRequest(BaseModel):
+    server: str
+    actor: str = "aion"
+    tools: list[str]
+
+
+@router.get("/api/playground/servers/write-tools")
+async def list_chat_write_tools(server: str, actor: str = "aion"):
+    from mcp_client import is_chat_write_tool_name
+    if actor not in ("aion", "connor"):
+        return {"ok": False, "error": "未知角色"}
+    if not mcp_manager.is_connected(server):
+        return {"ok": False, "error": "请先连接该 MCP 服务器"}
+    servers = {item["name"]: item for item in mcp_manager.list_servers()}
+    if server not in servers:
+        return {"ok": False, "error": "服务器不可用"}
+    tools = [
+        {"name": t["name"], "description": str(t.get("description") or "")[:160]}
+        for t in mcp_manager.get_tools(server)
+        if is_chat_write_tool_name(t.get("name", ""))
+    ]
+    return {"ok": True, "tools": tools, "selected": servers[server]["chat_write_grants"][actor]}
+
+
+@router.post("/api/playground/servers/write-tools")
+async def save_chat_write_tools(req: ChatWriteToolsRequest):
+    try:
+        selected = mcp_manager.set_chat_write_tools(req.server, req.tools, actor=req.actor)
+        return {"ok": True, "selected": selected}
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 
 # ── API: 当前服务器可授权的只读候选工具 ──
 @router.get("/api/playground/servers/chat-tools")

@@ -71,6 +71,12 @@ CAPABILITY_DEFS: list[CapabilityDef] = [
         default_enabled=False,
         runtime_note="先在娱乐室连接 MCP，为岚和 Connor 分别选择可读取的工具。",
     ),
+    CapabilityDef(
+        "mcp_chat_write", "日常聊天 MCP 写入审批", "life",
+        "用户明确请求 @服务器名 写入时，生成审批卡；用户确认前不会执行任何 MCP 写入。",
+        default_enabled=False,
+        runtime_note="需先在娱乐室为对应角色单独授权写入候选工具。",
+    ),
     CapabilityDef("band_vibration", "手环呼唤", "life", "注入轻震/呼唤小纸条指令，让模型可以通过小米手环震动并显示一句话。"),
     CapabilityDef(
         "hug_pillow",

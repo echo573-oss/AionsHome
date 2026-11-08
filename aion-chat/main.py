@@ -78,6 +78,7 @@ from routes import gift as gift_routes
 from routes import fund as fund_routes
 from routes import wallpaper as wallpaper_routes
 from routes import playground as playground_routes
+from mcp_approvals import router as mcp_approvals_router
 from routes import chatroom as chatroom_routes
 from capabilities import pat_router
 from rps import router as rps_router
@@ -380,6 +381,7 @@ app.include_router(gift_routes.router)
 app.include_router(fund_routes.router)
 app.include_router(wallpaper_routes.router)
 app.include_router(playground_routes.router)
+app.include_router(mcp_approvals_router)
 app.include_router(chatroom_routes.router)
 app.include_router(pat_router)
 app.include_router(rps_router)

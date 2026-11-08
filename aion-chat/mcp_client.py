@@ -83,6 +83,25 @@ _WRITE_VERBS = {
 }
 
 
+_WRITE_ALLOWED = {"write", "create", "append", "add", "update"}
+_WRITE_FORBIDDEN = {
+    "delete", "remove", "drop", "clear", "erase", "overwrite",
+    "execute", "exec", "eval", "run", "shell", "command", "script",
+    "payment", "pay", "purchase", "order", "transfer", "send",
+    "login", "auth", "password", "secret", "credential", "token", "key",
+    "publish", "post", "email", "message", "share", "invite", "upload",
+    "admin", "permission", "grant", "config", "settings",
+}
+
+
+def is_chat_write_tool_name(name: str) -> bool:
+    """保守候选：支持文档创建/追加/更新，不开放删除、支付、任意执行等动作。"""
+    if not isinstance(name, str):
+        return False
+    parts = set(__import__("re").split(r"[^a-z0-9]+", name.lower()))
+    return bool(parts & _WRITE_ALLOWED) and not bool(parts & _WRITE_FORBIDDEN)
+
+
 def is_chat_read_tool_name(name: str) -> bool:
     """只允许名称形如 vault_list / vault_batch_read 的工具进入只读候选。"""
     if not isinstance(name, str):
@@ -148,6 +167,10 @@ class MCPManager:
                 "chat_read_grants": {
                     "aion": list((s.get("chat_read_grants") or {}).get("aion", s.get("chat_read_tools") or [])),
                     "connor": list((s.get("chat_read_grants") or {}).get("connor", [])),
+                },
+                "chat_write_grants": {
+                    "aion": list((s.get("chat_write_grants") or {}).get("aion") or []),
+                    "connor": list((s.get("chat_write_grants") or {}).get("connor") or []),
                 },
                 "connected": s["name"] in self._connections,
                 "tool_count": len(self._connections[s["name"]]["tools"]) if s["name"] in self._connections else 0,
@@ -297,11 +320,16 @@ class MCPManager:
         logger.info(f"[MCP] 已断开 {server_name}")
 
     # ── 调用工具 ────────────────────────────
-    async def call_tool(self, server_name: str, tool_name: str, arguments: dict) -> Any:
+    async def call_tool(
+        self, server_name: str, tool_name: str, arguments: dict, *,
+        fail_on_error: bool = False,
+    ) -> Any:
         conn = self._connections.get(server_name)
         if not conn:
             raise RuntimeError(f"MCP Server {server_name} 未连接")
         result = await conn["session"].call_tool(tool_name, arguments)
+        if fail_on_error and getattr(result, "isError", False):
+            raise RuntimeError("MCP 工具报告失败")
         # 将 result.content 序列化为可 JSON 化的格式
         contents = []
         for item in result.content:
@@ -413,6 +441,37 @@ class MCPManager:
                 if actor == "aion":
                     # 保留旧字段供低版本客户端读取；不会赋予 Connor 权限。
                     server["chat_read_tools"] = names
+                _save_config(cfg)
+                return names
+        raise ValueError("找不到 MCP 服务器")
+
+    def set_chat_write_tools(
+        self, server_name: str, tool_names: list[str], *, actor: str = "aion"
+    ) -> list[str]:
+        """独立写权限清单：必须连接确认真实工具存在，写操作仍需逐次审批。"""
+        if actor not in ("aion", "connor"):
+            raise ValueError("未知角色")
+        if not isinstance(tool_names, list) or len(tool_names) > 5 or any(
+            not isinstance(item, str) for item in tool_names
+        ):
+            raise ValueError("每个角色最多授权 5 个写入工具")
+        names = list(dict.fromkeys(tool_names))
+        if names:
+            if not self.is_connected(server_name):
+                raise ValueError("请先连接 MCP 服务器")
+            known = {tool.get("name") for tool in self.get_tools(server_name)}
+            if any(name not in known or not is_chat_write_tool_name(name) for name in names):
+                raise ValueError("只能授权当前服务器提供的非破坏性写入候选工具")
+        cfg = _load_config()
+        for srv in cfg.get("servers", []):
+            if srv.get("name") == server_name:
+                if srv.get("visible", True) is False:
+                    raise ValueError("此服务器不能配置")
+                grants = srv.get("chat_write_grants")
+                if not isinstance(grants, dict):
+                    grants = {}
+                grants[actor] = names
+                srv["chat_write_grants"] = grants
                 _save_config(cfg)
                 return names
         raise ValueError("找不到 MCP 服务器")

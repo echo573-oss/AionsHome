@@ -1782,7 +1782,7 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
         try:
             await _q.put({"id": ai_msg_id, "type": "start"})
             try:
-                await inject_private_mcp_context(history, body.content, model_key)
+                await inject_private_mcp_context(history, body.content, model_key, conv_id=conv_id)
             except Exception:
                 # MCP 出现任何意外时，普通聊天仍照常生成。
                 pass
@@ -2470,7 +2470,7 @@ async def send_message(conv_id: str, body: MsgCreate):
         try:
             await _q.put({"id": ai_msg_id, "type": "start"})
             try:
-                await inject_private_mcp_context(history, body.content, model_key)
+                await inject_private_mcp_context(history, body.content, model_key, conv_id=conv_id)
             except Exception:
                 # MCP 出现任何意外时，普通聊天仍照常生成。
                 pass

@@ -2212,7 +2212,7 @@ async def _stream_connor_model(messages: list[dict], model_key: str | None = Non
 
 async def _maybe_inject_room_mcp_context(
     history: list[dict], msgs: list[dict], query_text: str, model_key: str,
-    *, actor: str, ambient_context: str = "",
+    *, actor: str, room_id: str, ambient_context: str = "",
 ) -> bool:
     """仅人类明确要求的读取进入私聊/群聊生成路径；出错不影响聊天。"""
     if not eligible_chatroom_user_request(msgs, query_text, ambient_context=ambient_context):
@@ -2226,6 +2226,7 @@ async def _maybe_inject_room_mcp_context(
         return await inject_mcp_context(
             history, query_text, model_key, actor=actor,
             model_stream=connor_choice_stream if actor == "connor" else None,
+            scope_type="chatroom", scope_id=room_id,
         )
     except asyncio.CancelledError:
         raise
@@ -3991,7 +3992,7 @@ async def _generate_connor_reply(room_id, room, msgs, _q, context_limit, *, conn
         )
 
     await _maybe_inject_room_mcp_context(
-        connor_messages, msgs, query_text, connor_model_key, actor="connor",
+        connor_messages, msgs, query_text, connor_model_key, actor="connor", room_id=room_id,
     )
 
     async def content_stream():
@@ -4212,7 +4213,7 @@ async def _reply_aion(room_id, msgs, context_limit, query_text, model_key, _q, *
         )
 
     await _maybe_inject_room_mcp_context(
-        aion_history, msgs, query_text, model_key, actor="aion",
+        aion_history, msgs, query_text, model_key, actor="aion", room_id=room_id,
         ambient_context=ambient_context,
     )
 
@@ -4362,7 +4363,7 @@ async def _reply_connor(room_id, msgs, context_limit, query_text, _q, *, connor_
         )
 
     await _maybe_inject_room_mcp_context(
-        connor_history, msgs, query_text, connor_model_key, actor="connor",
+        connor_history, msgs, query_text, connor_model_key, actor="connor", room_id=room_id,
         ambient_context=ambient_context,
     )
 

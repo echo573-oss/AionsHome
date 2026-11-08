@@ -503,18 +503,25 @@ function renderManageList() {
         chatButton.title = '选择允许在日常私聊里读取的工具';
         chatButton.addEventListener('click', () => editChatReadTools(s.name));
         row.insertBefore(chatButton, row.lastElementChild);
+        const writeButton = document.createElement('button');
+        writeButton.className = 'pg-manage-chat-btn';
+        writeButton.type = 'button';
+        writeButton.textContent = '写入审批';
+        writeButton.title = '授权非破坏性写入工具；每次实际写入仍需用户确认';
+        writeButton.addEventListener('click', () => editChatReadTools(s.name, 'aion', 'write'));
+        row.insertBefore(writeButton, row.lastElementChild);
       }
       list.appendChild(row);
     });
   });
 }
 
-async function editChatReadTools(serverName, actor = "aion") {
+async function editChatReadTools(serverName, actor = "aion", mode = "read") {
   const editor = document.getElementById('chatToolsEditor');
   editor.style.display = 'flex';
   editor.replaceChildren();
   const heading = document.createElement('strong');
-  heading.textContent = serverName + ' · 私聊读取工具';
+  heading.textContent = serverName + (mode === 'write' ? ' · 写入审批授权' : ' · 日常聊天读取工具');
   editor.appendChild(heading);
   const roleLabel = document.createElement('label');
   roleLabel.className = 'pg-manage-row-detail';
@@ -528,15 +535,16 @@ async function editChatReadTools(serverName, actor = "aion") {
     roleSelect.appendChild(option);
   }
   roleSelect.value = actor;
-  roleSelect.addEventListener('change', () => editChatReadTools(serverName, roleSelect.value));
+  roleSelect.addEventListener('change', () => editChatReadTools(serverName, roleSelect.value, mode));
   roleLabel.appendChild(roleSelect);
   editor.appendChild(roleLabel);
   const info = document.createElement('div');
   info.className = 'pg-manage-row-detail';
-  info.textContent = '仅选你确认是读取操作的工具；写入、删除不会开放。';
+  info.textContent = mode === 'write' ? '仅授权你了解的写入工具；模型只能起草提案，每次都需要点击确认。' : '仅选择确认为读取操作的工具。';
   editor.appendChild(info);
   try {
-    const response = await fetch('/api/playground/servers/chat-tools?server=' + encodeURIComponent(serverName) + '&actor=' + encodeURIComponent(actor));
+    const endpoint = mode === 'write' ? 'write-tools' : 'chat-tools';
+    const response = await fetch('/api/playground/servers/' + endpoint + '?server=' + encodeURIComponent(serverName) + '&actor=' + encodeURIComponent(actor));
     const data = await response.json();
     if (!data.ok) throw new Error(data.error || '无法加载工具');
     const selected = new Set(data.selected || []);
@@ -560,16 +568,17 @@ async function editChatReadTools(serverName, actor = "aion") {
     }
     const button = document.createElement('button');
     button.className = 'pg-manage-add-btn';
-    button.textContent = '保存聊天读取权限';
+    button.textContent = mode === 'write' ? '保存写入审批授权' : '保存聊天读取权限';
     button.addEventListener('click', async () => {
       const tools = Array.from(editor.querySelectorAll('input[type="checkbox"]:checked'))
         .map(input => input.value);
-      if (tools.length > 8) {
-        alert('最多选择 8 个读取工具');
+      const maxTools = mode === 'write' ? 5 : 8;
+      if (tools.length > maxTools) {
+        alert('最多选择 ' + maxTools + ' 个工具');
         return;
       }
       try {
-        const response = await fetch('/api/playground/servers/chat-tools', {
+        const response = await fetch('/api/playground/servers/' + endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ server: serverName, actor, tools }),
