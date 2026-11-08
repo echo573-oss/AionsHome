@@ -207,6 +207,20 @@ async def _insert_private_ability_block(
         history.insert(cap_idx + inject_offset + 1, {"role": "assistant", "content": "好的，需要时我会使用这些指令。"})
         inject_offset += 2
 
+    # Only Aion's private chat sees these self-kept thoughts. A prompt appearance
+    # is not treated as proof that the thought was actually said to the user.
+    try:
+        from recent_thoughts import take_recent_thoughts_for_chat
+        recent_thoughts = await take_recent_thoughts_for_chat("aion")
+        if recent_thoughts:
+            history.insert(cap_idx + inject_offset, {"role": "user", "content": recent_thoughts})
+            history.insert(cap_idx + inject_offset + 1, {
+                "role": "assistant", "content": "我记得自己留过这些念头，不一定现在要说。"
+            })
+            inject_offset += 2
+    except Exception as exc:
+        print(f"[recent_thoughts] chat context skipped: {type(exc).__name__}")
+
     if conv_id:
         play_prompt = build_play_prompt(
             "private",
