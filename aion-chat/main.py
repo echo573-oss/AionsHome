@@ -55,6 +55,7 @@ from routes import chat, cam as cam_routes, files, settings, memories
 from routes import memory_library
 from routes import user_profile
 from routes import form_vault as form_vault_routes
+from routes import connor_browser as connor_browser_routes
 import post_sentinel
 import kitchen_sentinel
 from routes import kitchen as kitchen_routes
@@ -361,6 +362,7 @@ app.include_router(memories.router)
 app.include_router(memory_library.router)
 app.include_router(user_profile.router)
 app.include_router(form_vault_routes.router)
+app.include_router(connor_browser_routes.router)
 app.include_router(kitchen_routes.router)
 app.include_router(voice_routes.router)
 app.include_router(music_routes.router)

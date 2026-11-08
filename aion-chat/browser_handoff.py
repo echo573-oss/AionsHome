@@ -1,7 +1,7 @@
 """浏览器执行器的控制权协议。
 
-本模块不启动 Chrome、不暴露路由，也不读取密码。未来的 Connor-BrowserTool
-适配器通过 BrowserDriver 接口接入。接管期间禁止 Agent 动作，观察不等于接管。
+本模块提供浏览器控制权状态机，对接 Connor-BrowserTool 驱动器。
+接管期间禁止 Agent 动作，观察不等于接管。
 """
 from __future__ import annotations
 
@@ -26,6 +26,10 @@ class BrowserDriver(Protocol):
     async def pause_agent(self) -> None: ...
     async def resume_agent(self) -> None: ...
     async def close(self) -> None: ...
+    async def click(self, x: int, y: int) -> dict: ...
+    async def type_text(self, text: str) -> dict: ...
+    async def read_text(self) -> str: ...
+    async def screenshot(self) -> dict: ...
 
 
 def _safe_url(url: str) -> str:
@@ -97,7 +101,7 @@ class BrowserSession:
 
 
 class BrowserHandoff:
-    """进程内状态机，供未来本地浏览器适配器调用；不对聊天开放任意命令。"""
+    """进程内状态机，供本地浏览器适配器调用；不对聊天开放任意命令。"""
 
     def __init__(self, make_driver: Callable[[], BrowserDriver]):
         self._make_driver = make_driver
@@ -118,6 +122,16 @@ class BrowserHandoff:
                 raise BrowserControlError("浏览器任务不存在或已结束")
             self._authorized(session, actor, scope_type, scope_id)
             return session
+
+    async def get_active_session(self, actor: str = "", scope_type: str = "", scope_id: str = "") -> dict | None:
+        """获取当前活跃的浏览器任务公共状态（若指定范围则需授权）。"""
+        async with self._manager_lock:
+            session = self._session
+            if not session:
+                return None
+            if actor and (session.actor != actor or session.scope_type != scope_type or session.scope_id != scope_id):
+                return None
+            return session.public()
 
     @staticmethod
     def _update_observation(session: BrowserSession, result: dict) -> None:
@@ -193,6 +207,67 @@ class BrowserHandoff:
                     session.state = "agent"
             return session.public()
 
+    async def click(self, session_id: str, actor: str,
+                    scope_type: str, scope_id: str, x: int, y: int) -> dict:
+        session = await self._find(session_id, actor, scope_type, scope_id)
+        async with session.lock:
+            if session.state != "agent":
+                raise BrowserControlError("用户接管期间不能由 Agent 操作网页")
+            session.state = "running"
+            try:
+                result = await asyncio.wait_for(session.driver.click(x, y), timeout=15)
+                if isinstance(result, dict):
+                    self._update_observation(session, result)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                session.error = type(exc).__name__
+                raise
+            finally:
+                if session.state == "running":
+                    session.state = "agent"
+            return session.public()
+
+    async def type_text(self, session_id: str, actor: str,
+                        scope_type: str, scope_id: str, text: str) -> dict:
+        session = await self._find(session_id, actor, scope_type, scope_id)
+        async with session.lock:
+            if session.state != "agent":
+                raise BrowserControlError("用户接管期间不能由 Agent 操作网页")
+            session.state = "running"
+            try:
+                result = await asyncio.wait_for(session.driver.type_text(text), timeout=15)
+                if isinstance(result, dict):
+                    self._update_observation(session, result)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                session.error = type(exc).__name__
+                raise
+            finally:
+                if session.state == "running":
+                    session.state = "agent"
+            return session.public()
+
+    async def read_text(self, session_id: str, actor: str,
+                        scope_type: str, scope_id: str) -> str:
+        session = await self._find(session_id, actor, scope_type, scope_id)
+        async with session.lock:
+            if session.state == "closed":
+                raise BrowserControlError("浏览器任务已结束")
+            return await asyncio.wait_for(session.driver.read_text(), timeout=12)
+
+    async def screenshot(self, session_id: str, actor: str,
+                         scope_type: str, scope_id: str) -> dict:
+        session = await self._find(session_id, actor, scope_type, scope_id)
+        async with session.lock:
+            if session.state == "closed":
+                raise BrowserControlError("浏览器任务已结束")
+            result = await asyncio.wait_for(session.driver.screenshot(), timeout=15)
+            if isinstance(result, dict) and "url" in result:
+                self._update_observation(session, result)
+            return result
+
     async def take_control(self, session_id: str, actor: str,
                            scope_type: str, scope_id: str) -> dict:
         session = await self._find(session_id, actor, scope_type, scope_id)
@@ -247,3 +322,15 @@ class BrowserHandoff:
         except Exception:
             # 适配器负责保证对浏览器进程的最终清理；此层不重启。
             pass
+
+
+_connor_browser_handoff: BrowserHandoff | None = None
+
+
+def get_connor_browser_handoff() -> BrowserHandoff:
+    """获取与 Connor-BrowserTool 对接的单例浏览器控制权管理器。"""
+    global _connor_browser_handoff
+    if _connor_browser_handoff is None:
+        from connor_browser_driver import ConnorBrowserDriver
+        _connor_browser_handoff = BrowserHandoff(ConnorBrowserDriver)
+    return _connor_browser_handoff

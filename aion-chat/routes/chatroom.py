@@ -2234,6 +2234,23 @@ async def _maybe_inject_room_mcp_context(
         return False
 
 
+async def _maybe_handle_connor_browser_context(
+    messages: list[dict], query_text: str, room_id: str, scope_type: str = "chatroom",
+) -> None:
+    try:
+        from connor_browser_chat import maybe_handle_connor_browser_intent
+        info = await maybe_handle_connor_browser_intent(
+            query_text, room_id=room_id, scope_type=scope_type, actor="connor",
+        )
+        if info:
+            messages.append({
+                "role": "system",
+                "content": f"[Connor 浏览器执行结果]\n{info}\n请结合此结果自然回复用户。如果用户已接管，提示等待用户操作；如果执行了操作，向用户汇报当前页面信息。",
+            })
+    except Exception:
+        pass
+
+
 def _chatroom_debug_payload(
     *,
     room_id: str,
@@ -3994,6 +4011,9 @@ async def _generate_connor_reply(room_id, room, msgs, _q, context_limit, *, conn
     await _maybe_inject_room_mcp_context(
         connor_messages, msgs, query_text, connor_model_key, actor="connor", room_id=room_id,
     )
+    await _maybe_handle_connor_browser_context(
+        connor_messages, query_text, room_id, scope_type="chatroom" if room.get("type") != "connor_1v1" else "private",
+    )
 
     async def content_stream():
         nonlocal has_reply
@@ -4365,6 +4385,9 @@ async def _reply_connor(room_id, msgs, context_limit, query_text, _q, *, connor_
     await _maybe_inject_room_mcp_context(
         connor_history, msgs, query_text, connor_model_key, actor="connor", room_id=room_id,
         ambient_context=ambient_context,
+    )
+    await _maybe_handle_connor_browser_context(
+        connor_history, query_text, room_id, scope_type="chatroom" if room.get("type") != "connor_1v1" else "private",
     )
 
     async def content_stream():
