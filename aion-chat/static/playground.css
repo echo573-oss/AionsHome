@@ -645,3 +645,10 @@ body:not([data-theme="dark"]) .pg-manage-input option {
 .pg-chat-tool-row input { accent-color:#ff8359; }
 .pg-manage-chat-btn { background:rgba(255,131,89,.14); color:inherit; border:0; padding:5px 8px; border-radius:8px; cursor:pointer; font-size:11px; }
 .pg-chat-tools-editor .pg-manage-add-btn { width:100%; }
+
+/* MCP 添加表单里的认证提示 */
+.pg-auth-note {
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.58;
+}

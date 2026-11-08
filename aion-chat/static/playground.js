@@ -491,7 +491,7 @@ function renderManageList() {
         <span class="pg-manage-row-icon">${s.connected ? '🟢' : '⚪'}</span>
         <div class="pg-manage-row-info">
           <div class="pg-manage-row-name">${escapeHtml(s.name)}</div>
-          <div class="pg-manage-row-detail">${escapeHtml(s.type)} · ${s.connected ? '已连接' : '未连接'}</div>
+          <div class="pg-manage-row-detail">${escapeHtml(s.type)} · ${s.connected ? '已连接' : '未连接'}${s.auth_configured ? ' · 已配置认证' : ''}</div>
         </div>
         <button class="pg-manage-row-del" onclick="removeServer('${escapeHtml(s.name)}')" title="删除">✕</button>
       `;
@@ -514,6 +514,15 @@ function renderManageList() {
       list.appendChild(row);
     });
   });
+}
+
+function updateMcpAuthFields() {
+  const mode = document.getElementById('addAuthMode').value;
+  const nameField = document.getElementById('addHeaderName');
+  const valueField = document.getElementById('addHeaderValue');
+  nameField.style.display = mode === 'header' ? '' : 'none';
+  valueField.style.display = mode === 'none' ? 'none' : '';
+  valueField.placeholder = mode === 'bearer' ? 'Bearer Token（不用填写 Bearer 前缀）' : '请求头的值';
 }
 
 async function editChatReadTools(serverName, actor = "aion", mode = "read") {
@@ -601,18 +610,41 @@ async function addServer() {
   const name = document.getElementById('addName').value.trim();
   const url = document.getElementById('addUrl').value.trim();
   const type = document.getElementById('addType').value;
+  const authMode = document.getElementById('addAuthMode').value;
   if (!name || !url) return;
+  const headers = {};
+  if (authMode !== 'none') {
+    const value = document.getElementById('addHeaderValue').value.trim();
+    if (!value) {
+      alert('请填写认证信息');
+      return;
+    }
+    if (authMode === 'bearer') {
+      headers.Authorization = value.toLowerCase().startsWith('bearer ') ? value : 'Bearer ' + value;
+    } else {
+      const headerName = document.getElementById('addHeaderName').value.trim();
+      if (!/^[A-Za-z0-9-]+$/.test(headerName)) {
+        alert('请填写有效的请求头名称');
+        return;
+      }
+      headers[headerName] = value;
+    }
+  }
 
   try {
     const resp = await fetch('/api/playground/servers/add', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, type, url }),
+      body: JSON.stringify({ name, type, url, headers }),
     });
     const data = await resp.json();
     if (data.ok) {
       document.getElementById('addName').value = '';
       document.getElementById('addUrl').value = '';
+      document.getElementById('addHeaderName').value = '';
+      document.getElementById('addHeaderValue').value = '';
+      document.getElementById('addAuthMode').value = 'none';
+      updateMcpAuthFields();
       renderManageList();
       loadServers();
     } else {

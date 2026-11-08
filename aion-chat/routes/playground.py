@@ -9,7 +9,7 @@ import aiosqlite, httpx
 
 from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 from config import load_worldbook, SETTINGS, get_key, MODELS
@@ -40,6 +40,7 @@ class AddServerRequest(BaseModel):
     name: str
     type: str = "sse"   # http / sse / stdio
     url: str
+    headers: dict[str, str] = Field(default_factory=dict)
 
 class ChatReadToolsRequest(BaseModel):
     server: str
@@ -118,8 +119,14 @@ async def list_servers():
 @router.post("/api/playground/servers/add")
 async def add_server(req: AddServerRequest):
     try:
-        srv = mcp_manager.add_server(req.name.strip(), req.type.strip(), req.url.strip())
-        return {"ok": True, "server": srv}
+        srv = mcp_manager.add_server(
+            req.name.strip(), req.type.strip(), req.url.strip(), headers=req.headers
+        )
+        # 认证值只保存于本机配置，不通过 API 回传给浏览器。
+        return {"ok": True, "server": {
+            "name": srv["name"], "type": srv["type"], "enabled": srv["enabled"],
+            "auth_configured": bool(srv.get("headers")),
+        }}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

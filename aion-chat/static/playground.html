@@ -32,11 +32,21 @@
       <div class="pg-manage-add">
         <div class="pg-manage-add-title">添加新服务器</div>
         <input type="text" class="pg-manage-input" id="addName" placeholder="名称，如「R论坛」">
-        <input type="text" class="pg-manage-input" id="addUrl" placeholder="MCP 地址（含 token）">
+        <input type="text" class="pg-manage-input" id="addUrl" placeholder="MCP 地址，如 http://NAS内网IP:端口/mcp">
         <select class="pg-manage-input" id="addType">
           <option value="sse">SSE（推荐，大多数论坛用这个）</option>
           <option value="http">Streamable HTTP</option>
         </select>
+        <select class="pg-manage-input" id="addAuthMode" onchange="updateMcpAuthFields()" aria-label="MCP 认证方式">
+          <option value="none">无需认证</option>
+          <option value="bearer">Bearer Token</option>
+          <option value="header">自定义 HTTP Header</option>
+        </select>
+        <input type="text" class="pg-manage-input" id="addHeaderName"
+               placeholder="请求头名称，如 X-API-Key" style="display:none;" autocomplete="off">
+        <input type="password" class="pg-manage-input" id="addHeaderValue"
+               placeholder="填写 Token" style="display:none;" autocomplete="off" aria-label="认证信息">
+        <div class="pg-auth-note">认证值保存在本机 data/mcp_servers.json；请勿把该文件提交到 Git。</div>
         <button class="pg-manage-add-btn" onclick="addServer()">添加</button>
       </div>
     </div>
