@@ -509,19 +509,34 @@ function renderManageList() {
   });
 }
 
-async function editChatReadTools(serverName) {
+async function editChatReadTools(serverName, actor = "aion") {
   const editor = document.getElementById('chatToolsEditor');
   editor.style.display = 'flex';
   editor.replaceChildren();
   const heading = document.createElement('strong');
   heading.textContent = serverName + ' · 私聊读取工具';
   editor.appendChild(heading);
+  const roleLabel = document.createElement('label');
+  roleLabel.className = 'pg-manage-row-detail';
+  roleLabel.textContent = '授权角色：';
+  const roleSelect = document.createElement('select');
+  roleSelect.className = 'pg-manage-input';
+  for (const [value, label] of [['aion', '岚'], ['connor', 'Connor（后续支持）']]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    roleSelect.appendChild(option);
+  }
+  roleSelect.value = actor;
+  roleSelect.addEventListener('change', () => editChatReadTools(serverName, roleSelect.value));
+  roleLabel.appendChild(roleSelect);
+  editor.appendChild(roleLabel);
   const info = document.createElement('div');
   info.className = 'pg-manage-row-detail';
   info.textContent = '仅选你确认是读取操作的工具；写入、删除不会开放。';
   editor.appendChild(info);
   try {
-    const response = await fetch('/api/playground/servers/chat-tools?server=' + encodeURIComponent(serverName));
+    const response = await fetch('/api/playground/servers/chat-tools?server=' + encodeURIComponent(serverName) + '&actor=' + encodeURIComponent(actor));
     const data = await response.json();
     if (!data.ok) throw new Error(data.error || '无法加载工具');
     const selected = new Set(data.selected || []);
@@ -557,7 +572,7 @@ async function editChatReadTools(serverName) {
         const response = await fetch('/api/playground/servers/chat-tools', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ server: serverName, tools }),
+          body: JSON.stringify({ server: serverName, actor, tools }),
         });
         const result = await response.json();
         if (!result.ok) throw new Error(result.error || '保存失败');

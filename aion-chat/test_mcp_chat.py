@@ -17,6 +17,7 @@ class MCPReadBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.manager = SimpleNamespace(
             list_servers=Mock(return_value=[{
                 "name": "Vault", "enabled": True, "chat_read_tools": ["vault_list", "vault_write"],
+                "chat_read_grants": {"aion": ["vault_list", "vault_write"], "connor": []},
             }]),
             connect=AsyncMock(return_value=self.catalog),
             call_tool=AsyncMock(return_value=[{"type": "text", "text": '["Notes", "Lan"]'}]),
@@ -75,6 +76,16 @@ class MCPReadBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("top-secret", context)
         self.assertIn("读取失败", context)
 
+    async def test_connor_cannot_inherit_aion_tools(self):
+        context = await mcp_chat.maybe_read_mcp_context("@Vault 查看目录", "model", actor="connor")
+        self.assertIsNone(context)
+        self.manager.connect.assert_not_awaited()
+
+    async def test_unknown_actor_cannot_access_tools(self):
+        context = await mcp_chat.maybe_read_mcp_context("@Vault 查看目录", "model", actor="guest")
+        self.assertIsNone(context)
+        self.manager.connect.assert_not_awaited()
+
 
 class MCPChatReadConfigTests(unittest.TestCase):
     def setUp(self):
@@ -102,6 +113,18 @@ class MCPChatReadConfigTests(unittest.TestCase):
     def test_unknown_tool_is_refused(self):
         with self.assertRaises(ValueError):
             self.manager.set_chat_read_tools("Vault", ["secret_read"])
+
+    def test_connor_grant_is_separate(self):
+        self.manager.set_chat_read_tools("Vault", ["vault_list"], actor="aion")
+        self.manager.set_chat_read_tools("Vault", ["vault_search"], actor="connor")
+        visible = next(s for s in self.manager.list_servers() if s["name"] == "Vault")
+        self.assertEqual(visible["chat_read_grants"]["aion"], ["vault_list"])
+        self.assertEqual(visible["chat_read_grants"]["connor"], ["vault_search"])
+        self.assertEqual(visible["chat_read_tools"], ["vault_list"])
+
+    def test_invalid_actor_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "未知角色"):
+            self.manager.set_chat_read_tools("Vault", ["vault_list"], actor="guest")
 
 
 if __name__ == "__main__":

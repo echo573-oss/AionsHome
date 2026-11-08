@@ -144,6 +144,10 @@ class MCPManager:
                 "url": s.get("url", ""),
                 "enabled": s.get("enabled", True),
                 "chat_read_tools": list(s.get("chat_read_tools") or []),
+                "chat_read_grants": {
+                    "aion": list((s.get("chat_read_grants") or {}).get("aion", s.get("chat_read_tools") or [])),
+                    "connor": list((s.get("chat_read_grants") or {}).get("connor", [])),
+                },
                 "connected": s["name"] in self._connections,
                 "tool_count": len(self._connections[s["name"]]["tools"]) if s["name"] in self._connections else 0,
             })
@@ -373,7 +377,11 @@ class MCPManager:
         return conn["tools"] if conn else []
 
     # ── 为私聊显式授权只读工具 ────────────────────
-    def set_chat_read_tools(self, server_name: str, tool_names: list[str]) -> list[str]:
+    def set_chat_read_tools(
+        self, server_name: str, tool_names: list[str], *, actor: str = "aion"
+    ) -> list[str]:
+        if actor not in {"aion", "connor"}:
+            raise ValueError("未知角色，无法授予工具权限")
         if not isinstance(tool_names, list) or len(tool_names) > 8 or any(
             not isinstance(item, str) for item in tool_names
         ):
@@ -390,7 +398,14 @@ class MCPManager:
             if server.get("name") == server_name:
                 if server.get("visible", True) is False:
                     raise ValueError("此服务器不可在娱乐室配置")
-                server["chat_read_tools"] = names
+                grants = server.get("chat_read_grants")
+                if not isinstance(grants, dict):
+                    grants = {"aion": list(server.get("chat_read_tools") or [])}
+                grants[actor] = names
+                server["chat_read_grants"] = grants
+                if actor == "aion":
+                    # 保留旧字段供低版本客户端读取；不会赋予 Connor 权限。
+                    server["chat_read_tools"] = names
                 _save_config(cfg)
                 return names
         raise ValueError("找不到 MCP 服务器")

@@ -43,12 +43,15 @@ class AddServerRequest(BaseModel):
 
 class ChatReadToolsRequest(BaseModel):
     server: str
+    actor: str = "aion"
     tools: list[str]
 
 
 # ── API: 当前服务器可授权的只读候选工具 ──
 @router.get("/api/playground/servers/chat-tools")
-async def list_chat_read_tools(server: str):
+async def list_chat_read_tools(server: str, actor: str = "aion"):
+    if actor not in ("aion", "connor"):
+        return {"ok": False, "error": "未知角色"}
     from mcp_client import is_chat_read_tool_name
     if not mcp_manager.is_connected(server):
         return {"ok": False, "error": "请先连接该 MCP 服务器"}
@@ -60,13 +63,13 @@ async def list_chat_read_tools(server: str):
         for t in mcp_manager.get_tools(server)
         if is_chat_read_tool_name(t.get("name", ""))
     ]
-    return {"ok": True, "tools": tools, "selected": servers[server]["chat_read_tools"]}
+    return {"ok": True, "tools": tools, "selected": servers[server]["chat_read_grants"][actor]}
 
 
 @router.post("/api/playground/servers/chat-tools")
 async def save_chat_read_tools(req: ChatReadToolsRequest):
     try:
-        selected = mcp_manager.set_chat_read_tools(req.server, req.tools)
+        selected = mcp_manager.set_chat_read_tools(req.server, req.tools, actor=req.actor)
         return {"ok": True, "selected": selected}
     except ValueError as exc:
         return {"ok": False, "error": str(exc)}

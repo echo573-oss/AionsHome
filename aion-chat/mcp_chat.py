@@ -11,13 +11,14 @@ MAX_TOOLS = 8
 MAX_TOOL_REPLY = 5000
 
 
-def _requested_server(message: str, servers: list[dict]) -> dict | None:
+def _requested_server(message: str, servers: list[dict], *, actor: str = "aion") -> dict | None:
     """只响应用户本轮明确的 @服务器名，避免闲聊意外触发工具。"""
     if not isinstance(message, str) or "@" not in message:
         return None
     for server in sorted(servers, key=lambda item: len(item.get("name", "")), reverse=True):
         name = server.get("name", "")
-        tools = server.get("chat_read_tools", [])
+        grants = server.get("chat_read_grants") or {}
+        tools = grants.get(actor, []) if isinstance(grants, dict) else []
         if not name or not server.get("enabled", True) or not tools:
             continue
         if re.search(r"@" + re.escape(name) + r"(?![a-zA-Z0-9_-])", message, re.IGNORECASE):
@@ -82,15 +83,17 @@ async def _select_read_tool(user_text: str, model_key: str, available: list[dict
     return _parse_choice("".join(chunks))
 
 
-async def maybe_read_mcp_context(user_text: str, model_key: str) -> str | None:
+async def maybe_read_mcp_context(user_text: str, model_key: str, *, actor: str = "aion") -> str | None:
     """成功或出错时都返回给当前回复的背景；普通消息开销为一次设置检查。"""
+    if actor not in {"aion", "connor"}:
+        return None
     if not is_capability_enabled("mcp_chat_read"):
         return None
-    server = _requested_server(user_text, mcp_manager.list_servers())
+    server = _requested_server(user_text, mcp_manager.list_servers(), actor=actor)
     if not server:
         return None
     name = server["name"]
-    allow = set(server.get("chat_read_tools", []))
+    allow = set((server.get("chat_read_grants") or {}).get(actor, []))
     try:
         async with asyncio.timeout(12):
             tools = await mcp_manager.connect(name)
@@ -127,7 +130,7 @@ async def maybe_read_mcp_context(user_text: str, model_key: str) -> str | None:
 
 
 async def inject_private_mcp_context(history: list[dict], user_text: str, model_key: str) -> bool:
-    context = await maybe_read_mcp_context(user_text, model_key)
+    context = await maybe_read_mcp_context(user_text, model_key, actor="aion")
     if context is None:
         return False
     # 插在最后一条用户消息之前，不改变用户的原话。
