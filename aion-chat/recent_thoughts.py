@@ -79,6 +79,11 @@ async def save_recent_thought(actor: str, content: str, *, source_action: str, s
             )),
         )
         await db.commit()
+    try:
+        from ws import manager
+        await manager.broadcast({"type": "recent_thoughts_changed", "data": {"actor": actor}})
+    except Exception:
+        pass
     return item
 
 
