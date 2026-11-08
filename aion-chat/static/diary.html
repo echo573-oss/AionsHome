@@ -279,7 +279,11 @@ body[data-theme="light"] .diary-input {
 <div class="sub-page">
   <div class="top-bar" style="position:relative">
     <button class="back-btn" onclick="navigateSubPageBack()">⬅</button>
-    <h2>日记本</h2>
+    <h2>书写</h2>
+    <nav class="diary-book-switch" aria-label="选择书本">
+      <span class="active" aria-current="page">日记本</span>
+      <a href="/river">河</a>
+    </nav>
     <button class="diary-add-btn" onclick="openDiaryModal()" title="写日记" aria-label="写日记">＋</button>
   </div>
   <div class="diary-overlay" id="diaryOverlay" onclick="if(event.target===this)closeDiaryModal()">
