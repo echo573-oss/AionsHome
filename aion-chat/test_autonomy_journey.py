@@ -149,6 +149,34 @@ class AutonomyJourneyTests(unittest.IsolatedAsyncioTestCase):
         finally:
             autonomy._AUTONOMY_ACTIVITY_THOUGHT.reset(token)
 
+    async def test_web_journey_offers_thought_on_finish_without_extra_turn(self):
+        prompts = []
+        decisions = [
+            {"decision": "CONTINUE", "query": "银河里的故事"},
+            {
+                "decision": "FINISH", "title": "银河散步",
+                "reflection": "逛得很开心。",
+                "recent_thought": "原来探索的意义有时候是在回来以后慢慢发现的。",
+            },
+        ]
+
+        async def ask(prompt):
+            prompts.append(prompt)
+            return decisions.pop(0)
+
+        result = await autonomy_journey.run_web_journey(
+            actor="aion", session_id="trip-with-thought", ask_json=ask,
+            search=AsyncMock(return_value=["找到有趣的内容"]),
+            create_card=AsyncMock(return_value={"id": "card-1"}),
+            save_message=AsyncMock(),
+            generate_image=AsyncMock(),
+            actor_name="岚", user_name="知",
+        )
+        self.assertTrue(result.completed)
+        self.assertEqual(2, len(prompts))
+        self.assertIn("recent_thought", prompts[-1])
+        self.assertNotIn("留下一条近期想法？", " ".join(prompts))
+
     async def test_continuing_exploration_never_exceeds_five_action_calls(self):
         calls = []
 
