@@ -12,7 +12,7 @@
 
 ## 数据
 
-第一次访问 API 时，在现有 AionsHome SQLite 数据库中创建 river_chapters 和 river_revisions。不单独开数据库，也不复制记忆正文。章节的关联为 memory_ids，展示时在 memories 表中只读查找；原子记忆被删除时仍保留原 ID 和「已不存在」提示。主记忆库的访问控制由站点现有中间件负责。
+第一次访问 API 时，在现有 AionsHome SQLite 数据库中创建 river_chapters 和 river_revisions。不单独开数据库，也不复制记忆正文。章节的关联为 memory_ids，展示时在 memories 表中只读查找；原子记忆被删除时仍保留原 ID 和「已不存在」提示。访问范围沿用 AionsHome 现有的本机/局域网/Tailscale 部署配置；《河》没有单独的登录模块。不要把包含私密章节的服务直接公开到互联网。
 
 source_key 对应各窗口的 RAW-0005-RIVER-0001 编号，建有唯一索引；version 用于防止两个页面同时编辑产生静默覆盖。历史版本可以恢复，而当前版本会先写入历史。
 
