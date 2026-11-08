@@ -75,6 +75,26 @@ class RecentThoughtsTests(unittest.IsolatedAsyncioTestCase):
 
 
 class DiaryBrowseTests(unittest.IsolatedAsyncioTestCase):
+    async def test_home_dynamics_can_choose_silence(self):
+        with patch.object(autonomy, "_home_dynamics_snapshot", new=AsyncMock(return_value=("今天很安静", []))), \
+             patch.object(autonomy, "_ask_actor_json", new=AsyncMock(return_value={
+                 "after_read_action": "none", "reason": "暂时没有想说的",
+             })), \
+             patch.object(autonomy, "append_idle_event", new=AsyncMock(return_value={"id": "quiet_event"})), \
+             patch("diary.save_diary_entry", new=AsyncMock()) as save:
+            result = await autonomy._run_home_dynamics("aion")
+
+        self.assertEqual("quiet_event", result["event"]["id"])
+        save.assert_not_awaited()
+
+    async def test_blank_home_dynamics_diary_is_not_filled_with_boilerplate(self):
+        with patch("diary.save_diary_entry", new=AsyncMock()) as save:
+            result = await autonomy._write_home_dynamics_diary(
+                "aion", {"diary_title": "", "diary_content": ""}, "家庭时间轴"
+            )
+        self.assertIsNone(result)
+        save.assert_not_awaited()
+
     async def test_actor_may_read_full_personal_diary_without_sharing(self):
         class Cursor:
             async def fetchone(self):
