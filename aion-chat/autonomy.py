@@ -44,6 +44,10 @@ def _capture_activity_thought(data: dict) -> None:
     slot = _AUTONOMY_ACTIVITY_THOUGHT.get()
     if slot is None or not isinstance(data, dict):
         return
+    # An exploration is still in progress; only its FINISH decision can
+    # record a completed-trip thought.
+    if str(data.get("decision") or "").upper() == "CONTINUE":
+        return
     raw = data.get("recent_thought")
     if isinstance(raw, str) and raw.strip():
         slot["text"] = raw.strip()[:380]
@@ -489,7 +493,8 @@ async def _ask_actor_json(actor: str, instruction: str, *, limit: int = 30) -> d
     from proactive_companionship import inject_proactive_ability
     inject_proactive_ability(messages, actor)
     data = _json_extract(await _call_actor(actor, messages))
-    _capture_activity_thought(data)
+    if "recent_thought" in instruction:
+        _capture_activity_thought(data)
     return data
 
 
