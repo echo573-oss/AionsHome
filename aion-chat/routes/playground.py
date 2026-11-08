@@ -41,6 +41,36 @@ class AddServerRequest(BaseModel):
     type: str = "sse"   # http / sse / stdio
     url: str
 
+class ChatReadToolsRequest(BaseModel):
+    server: str
+    tools: list[str]
+
+
+# ── API: 当前服务器可授权的只读候选工具 ──
+@router.get("/api/playground/servers/chat-tools")
+async def list_chat_read_tools(server: str):
+    from mcp_client import is_chat_read_tool_name
+    if not mcp_manager.is_connected(server):
+        return {"ok": False, "error": "请先连接该 MCP 服务器"}
+    servers = {item["name"]: item for item in mcp_manager.list_servers()}
+    if server not in servers:
+        return {"ok": False, "error": "服务器不可用"}
+    tools = [
+        {"name": t["name"], "description": t.get("description", "")[:120]}
+        for t in mcp_manager.get_tools(server)
+        if is_chat_read_tool_name(t.get("name", ""))
+    ]
+    return {"ok": True, "tools": tools, "selected": servers[server]["chat_read_tools"]}
+
+
+@router.post("/api/playground/servers/chat-tools")
+async def save_chat_read_tools(req: ChatReadToolsRequest):
+    try:
+        selected = mcp_manager.set_chat_read_tools(req.server, req.tools)
+        return {"ok": True, "selected": selected}
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+
 
 # ── API: 列出 MCP Server ──
 @router.get("/api/playground/servers")

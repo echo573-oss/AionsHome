@@ -120,6 +120,7 @@ from schedule import (
     process_schedule_commands,
 )
 from mcp_client import mcp_manager
+from mcp_chat import inject_private_mcp_context
 from luckin import (
     LuckinOrderError,
     handle_luckin_commands,
@@ -1780,6 +1781,11 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
         error_text = None
         try:
             await _q.put({"id": ai_msg_id, "type": "start"})
+            try:
+                await inject_private_mcp_context(history, body.content, model_key)
+            except Exception:
+                # MCP 出现任何意外时，普通聊天仍照常生成。
+                pass
             kitchen_state = {}
 
             async def content_stream():
@@ -2463,6 +2469,11 @@ async def send_message(conv_id: str, body: MsgCreate):
         error_text = None
         try:
             await _q.put({"id": ai_msg_id, "type": "start"})
+            try:
+                await inject_private_mcp_context(history, body.content, model_key)
+            except Exception:
+                # MCP 出现任何意外时，普通聊天仍照常生成。
+                pass
             kitchen_state = {}
 
             async def content_stream():

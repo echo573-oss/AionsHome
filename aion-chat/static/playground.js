@@ -495,9 +495,82 @@ function renderManageList() {
         </div>
         <button class="pg-manage-row-del" onclick="removeServer('${escapeHtml(s.name)}')" title="删除">✕</button>
       `;
+      if (s.connected) {
+        const chatButton = document.createElement('button');
+        chatButton.className = 'pg-manage-chat-btn';
+        chatButton.type = 'button';
+        chatButton.textContent = '聊天读取';
+        chatButton.title = '选择允许在日常私聊里读取的工具';
+        chatButton.addEventListener('click', () => editChatReadTools(s.name));
+        row.insertBefore(chatButton, row.lastElementChild);
+      }
       list.appendChild(row);
     });
   });
+}
+
+async function editChatReadTools(serverName) {
+  const editor = document.getElementById('chatToolsEditor');
+  editor.style.display = 'flex';
+  editor.replaceChildren();
+  const heading = document.createElement('strong');
+  heading.textContent = serverName + ' · 私聊读取工具';
+  editor.appendChild(heading);
+  const info = document.createElement('div');
+  info.className = 'pg-manage-row-detail';
+  info.textContent = '仅选你确认是读取操作的工具；写入、删除不会开放。';
+  editor.appendChild(info);
+  try {
+    const response = await fetch('/api/playground/servers/chat-tools?server=' + encodeURIComponent(serverName));
+    const data = await response.json();
+    if (!data.ok) throw new Error(data.error || '无法加载工具');
+    const selected = new Set(data.selected || []);
+    for (const tool of data.tools || []) {
+      const row = document.createElement('label');
+      row.className = 'pg-chat-tool-row';
+      const check = document.createElement('input');
+      check.type = 'checkbox';
+      check.value = tool.name;
+      check.checked = selected.has(tool.name);
+      const title = document.createElement('span');
+      title.textContent = tool.name;
+      title.title = tool.description || '';
+      row.append(check, title);
+      editor.appendChild(row);
+    }
+    if (!data.tools?.length) {
+      const empty = document.createElement('span');
+      empty.textContent = '没有可授权的只读候选工具';
+      editor.appendChild(empty);
+    }
+    const button = document.createElement('button');
+    button.className = 'pg-manage-add-btn';
+    button.textContent = '保存聊天读取权限';
+    button.addEventListener('click', async () => {
+      const tools = Array.from(editor.querySelectorAll('input[type="checkbox"]:checked'))
+        .map(input => input.value);
+      if (tools.length > 8) {
+        alert('最多选择 8 个读取工具');
+        return;
+      }
+      try {
+        const response = await fetch('/api/playground/servers/chat-tools', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ server: serverName, tools }),
+        });
+        const result = await response.json();
+        if (!result.ok) throw new Error(result.error || '保存失败');
+        editor.style.display = 'none';
+        renderManageList();
+      } catch (error) {
+        alert('保存失败：' + error.message);
+      }
+    });
+    editor.appendChild(button);
+  } catch (error) {
+    info.textContent = '读取工具失败：' + error.message;
+  }
 }
 
 async function addServer() {

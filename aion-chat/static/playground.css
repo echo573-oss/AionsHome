@@ -638,3 +638,10 @@ body:not([data-theme="dark"]) .pg-manage-input option {
   transition: opacity 0.2s;
 }
 .pg-manage-add-btn:hover { opacity: 0.85; }
+
+/* MCP 私聊读取工具选择 */
+.pg-chat-tools-editor { display:flex; flex-direction:column; gap:8px; padding:12px; border-radius:10px; background:rgba(120,120,120,.1); margin:8px 0; }
+.pg-chat-tool-row { display:flex; align-items:center; gap:8px; font-size:12px; }
+.pg-chat-tool-row input { accent-color:#ff8359; }
+.pg-manage-chat-btn { background:rgba(255,131,89,.14); color:inherit; border:0; padding:5px 8px; border-radius:8px; cursor:pointer; font-size:11px; }
+.pg-chat-tools-editor .pg-manage-add-btn { width:100%; }

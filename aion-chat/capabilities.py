@@ -65,6 +65,12 @@ CAPABILITY_DEFS: list[CapabilityDef] = [
     CapabilityDef("schedule", "闹铃/日程/监督", "core", "注入闹铃、日程、定时监督和删除日程指令；关闭后也不注入当前日程列表。"),
     CapabilityDef("app_supervision", "应用监管", "core", "注入应用使用缓存、唤回聊天、整机专注和应用锁定/解锁指令；关闭后手机计时、上报和检查点唤醒全部静默。"),
     CapabilityDef("home", "智能家居", "life", "注入 [HOME:...]，让模型可以控制或查询 Home Assistant 设备。"),
+    CapabilityDef(
+        "mcp_chat_read", "日常私聊 MCP 读取", "life",
+        "私聊里明确提及 @服务器名 时，按需读取娱乐室授权的 MCP 工具。平时聊天不会加载 MCP。",
+        default_enabled=False,
+        runtime_note="先在娱乐室连接 MCP 并选择可供私聊读取的工具。",
+    ),
     CapabilityDef("band_vibration", "手环呼唤", "life", "注入轻震/呼唤小纸条指令，让模型可以通过小米手环震动并显示一句话。"),
     CapabilityDef(
         "hug_pillow",

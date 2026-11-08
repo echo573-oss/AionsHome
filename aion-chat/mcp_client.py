@@ -73,6 +73,24 @@ def _is_known_tool_transport_failure(error: Exception) -> bool:
         )
     return False
 
+# 只读名称仅用于筛选，用户还须逐个授权实际工具。
+_READ_VERBS = {"read", "list", "search", "find", "query", "fetch", "lookup", "view"}
+_WRITE_VERBS = {
+    "write", "edit", "delete", "remove", "append", "update", "create",
+    "move", "execute", "exec", "post", "put", "send", "transfer",
+    "pay", "order", "modify", "patch", "run", "invoke", "submit",
+    "password", "secret", "credential", "token", "key",
+}
+
+
+def is_chat_read_tool_name(name: str) -> bool:
+    """只允许名称形如 vault_list / vault_batch_read 的工具进入只读候选。"""
+    if not isinstance(name, str):
+        return False
+    parts = set(__import__("re").split(r"[^a-z0-9]+", name.lower()))
+    return bool(parts & _READ_VERBS) and not bool(parts & _WRITE_VERBS)
+
+
 # ── 默认配置 ──────────────────────────────────────
 _DEFAULT_CONFIG = {
     "servers": [
@@ -125,6 +143,7 @@ class MCPManager:
                 "type": s.get("type", "http"),
                 "url": s.get("url", ""),
                 "enabled": s.get("enabled", True),
+                "chat_read_tools": list(s.get("chat_read_tools") or []),
                 "connected": s["name"] in self._connections,
                 "tool_count": len(self._connections[s["name"]]["tools"]) if s["name"] in self._connections else 0,
             })
@@ -352,6 +371,29 @@ class MCPManager:
     def get_tools(self, server_name: str) -> list[dict]:
         conn = self._connections.get(server_name)
         return conn["tools"] if conn else []
+
+    # ── 为私聊显式授权只读工具 ────────────────────
+    def set_chat_read_tools(self, server_name: str, tool_names: list[str]) -> list[str]:
+        if not isinstance(tool_names, list) or len(tool_names) > 8 or any(
+            not isinstance(item, str) for item in tool_names
+        ):
+            raise ValueError("一次最多选择 8 个读取工具")
+        names = list(dict.fromkeys(tool_names))
+        if names:
+            if not self.is_connected(server_name):
+                raise ValueError("请先在娱乐室连接服务器，再选择聊天工具")
+            available = {tool["name"] for tool in self.get_tools(server_name)}
+            if any(name not in available or not is_chat_read_tool_name(name) for name in names):
+                raise ValueError("仅能授权已连接服务器上实际存在的只读候选工具")
+        cfg = _load_config()
+        for server in cfg.get("servers", []):
+            if server.get("name") == server_name:
+                if server.get("visible", True) is False:
+                    raise ValueError("此服务器不可在娱乐室配置")
+                server["chat_read_tools"] = names
+                _save_config(cfg)
+                return names
+        raise ValueError("找不到 MCP 服务器")
 
     # ── 服务器配置管理 ────────────────────
     def add_server(self, name: str, srv_type: str, url: str) -> dict:
