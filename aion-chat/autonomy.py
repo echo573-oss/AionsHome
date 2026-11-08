@@ -42,6 +42,7 @@ ACTION_DEFS = {
     "billiards_play": "邀请另一位家庭成员打一局休闲台球（算法负责击球，可以边打边聊）",
     "home_dynamics": "查看近期家庭动态",
     "memory_browse": "按需翻看一段旧记忆",
+    "diary_browse": "翻看自己以前写过的日记，想起什么都可以，也可以什么都不做",
     "album_browse": "翻看家庭相册（随机两张未看过的照片）",
     "web_roam": "上网冲浪搜索感兴趣的内容",
     "wish_pool": "查看许愿池并尝试实现用户的愿望",
@@ -598,6 +599,11 @@ async def _select_action(actor: str, *, manual: bool = False, idle_minutes: int 
         key for key in ACTION_DEFS
         if bool(cfg.get("actions", {}).get(key, key == "rest"))
     ]
+    if "diary_browse" in enabled:
+        async with get_db() as db:
+            cur = await db.execute("SELECT 1 FROM diary_entries WHERE author=? LIMIT 1", (actor,))
+            if not await cur.fetchone():
+                enabled.remove("diary_browse")
     if "album_browse" in enabled:
         if not await asyncio.to_thread(get_album_store().has_unseen_photos, actor):
             enabled.remove("album_browse")
@@ -1376,6 +1382,93 @@ async def _run_album_browse(actor: str) -> dict:
             share_error = "留言发送未能确认，感想和照片浏览记录已保留。"
     return {"photos": [{"id": p["id"], "url": p["url"], "title": p["title"], "taken_on": p["taken_on"]}
                        for p in photos], "reflection": reflection, "message": message, "share_error": share_error}
+
+
+async def _run_diary_browse(actor: str) -> dict:
+    """Actually read a past personal diary, rather than just its title."""
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT id,title,content,mood,created_at FROM diary_entries "
+            "WHERE author=? ORDER BY RANDOM() LIMIT 1", (actor,),
+        )
+        row = await cur.fetchone()
+    if not row:
+        event = await append_idle_event(actor, "diary_browse", f"{_actor_label(actor)}没有找到自己的旧日记")
+        return {"event": event}
+
+    entry = dict(row)
+    date = time.strftime("%Y-%m-%d", time.localtime(entry["created_at"]))
+    title = str(entry.get("title") or "无题").strip()
+    prompt = (
+        "[翻看自己以前写过的日记]\n"
+        f"这是你在 {date} 写下的《{title}》，当时心情：{entry.get('mood') or '未记录'}。\n"
+        f"日记正文：\n{str(entry.get('content') or '')[:4500]}\n\n"
+        "请真的读一读这篇旧日记。你可以改变当时的理解，也可以只是记起一点什么。"
+        "这篇日记首先属于你，不必把读后感发给用户，更不必为了完成动作强行产生感想。"
+        "reflection 是这次阅读后你自己的简短感受（可以为空）。"
+        "recent_thought 只有当你真有一条以后可能还想继续思考、或想在主聊天里自然提起的念头时才写，"
+        "否则留空。不要编造过去的经历。只返回 JSON："
+        '{"reflection":"","recent_thought":""}'
+    )
+    decision = await _ask_actor_json(actor, prompt, limit=18)
+    reflection = str(decision.get("reflection") or "").strip()[:500]
+    thought = str(decision.get("recent_thought") or "").strip()[:380]
+    event = await append_idle_event(
+        actor, "diary_browse", f"{_actor_label(actor)}重读了旧日记《{title[:70]}》",
+        (date + "。" + reflection)[:600],
+        target_type="diary", target_id=entry["id"],
+    )
+    return {
+        "event": event, "read_diary_id": entry["id"],
+        "read_diary_title": title, "reflection": reflection,
+        "recent_thought": thought,
+    }
+
+
+async def _maybe_save_autonomous_thought(
+    actor: str, action: str, selected: dict, result: dict, session_id: str,
+) -> dict | None:
+    """Only retain thoughts the actor voluntarily chooses after doing something."""
+    if action in {"rest", "private_chat", "role_chat"}:
+        return None
+    from recent_thoughts import save_recent_thought
+
+    thought = str(result.get("recent_thought") or "").strip()
+    # Diary browsing already asked whether to keep a thought. Do not ask twice.
+    if not thought and action != "diary_browse" and action in {
+        "memory_browse", "home_dynamics", "album_browse", "web_roam",
+        "xhs_roam", "taobao_roam", "wish_pool", "friend_visit",
+        "board_check", "board_visit",
+    }:
+        event = result.get("event") if isinstance(result.get("event"), dict) else {}
+        short_result = {
+            "why": str(selected.get("reason") or "")[:220],
+            "event": str(event.get("title") or "")[:160],
+            "detail": str(event.get("detail") or "")[:400],
+            "reflection": str(result.get("reflection") or "")[:320],
+            "message": str(result.get("message") or "")[:320],
+        }
+        try:
+            choice = await _ask_actor_json(actor, (
+                "[留下一条近期想法？]\n"
+                f"你刚才完成了自主活动「{ACTION_DEFS.get(action, action)}」。\n"
+                f"刚才的经过：{json.dumps(short_result, ensure_ascii=False)}\n"
+                "你自己有没有由此真正想到一件还想继续琢磨、或以后可能想在主聊天里自然提起的事？"
+                "大多数活动不需要留痕。如果没有，请 keep=false。"
+                "这不是给用户看的汇报，也不是任务清单，别记录活动流水账或重复已经发出的消息。"
+                '只返回 JSON：{"keep":false,"thought":""}'
+            ), limit=15)
+            if choice.get("keep") is True:
+                thought = str(choice.get("thought") or "").strip()
+        except Exception:
+            return None
+    if not thought:
+        return None
+    source_ref = str(result.get("read_diary_id") or session_id)
+    return await save_recent_thought(
+        actor, thought, source_action=action, source_ref=source_ref,
+    )
 
 
 async def _run_memory_browse(actor: str) -> dict:
@@ -2206,6 +2299,8 @@ async def _run_actor_once(actor: str, *, manual: bool = False, idle_minutes: int
             result = await invite(actor)
         elif action == "memory_browse":
             result = await _run_memory_browse(actor)
+        elif action == "diary_browse":
+            result = await _run_diary_browse(actor)
         elif action == "album_browse":
             result = await _run_album_browse(actor)
         elif action == "home_dynamics":
@@ -2252,6 +2347,7 @@ async def _run_actor_once(actor: str, *, manual: bool = False, idle_minutes: int
         "billiards_play": f"{actor_name}邀请另一位家庭成员打台球",
         "home_dynamics": f"{actor_name}查看了家庭动态",
         "memory_browse": f"{actor_name}查看了记忆库",
+        "diary_browse": f"{actor_name}翻看了旧日记",
         "album_browse": f"{actor_name}翻看了家庭相册",
         "web_roam": f"{actor_name}去网上冲浪了",
         "wish_pool": f"{actor_name}查看了许愿池",
@@ -2302,6 +2398,12 @@ async def _run_actor_once(actor: str, *, manual: bool = False, idle_minutes: int
                if action == "album_browse" else {}),
         },
     )
+    recent_thought = None
+    if ok and isinstance(result, dict):
+        try:
+            recent_thought = await _maybe_save_autonomous_thought(actor, action, selected, result, session_id)
+        except Exception as exc:
+            print(f"[idle_autonomy] recent thought save skipped: {type(exc).__name__}")
     payload = {
         "ok": ok,
         "actor": actor,
@@ -2310,6 +2412,8 @@ async def _run_actor_once(actor: str, *, manual: bool = False, idle_minutes: int
         "session_id": session_id,
         "event": event,
     }
+    if recent_thought:
+        payload["recent_thought"] = recent_thought
     if error:
         payload["error"] = error
     return payload
