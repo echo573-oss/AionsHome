@@ -727,8 +727,8 @@ async function dismissRecentThought(id) {
 function connectDiaryWS() {
   connectCommonWS(msg => {
     if (['diary_new', 'diary_updated', 'diary_deleted'].includes(msg.type)) loadDiaries();
-    if (msg.type === 'recent_thoughts_changed' && msg.data?.actor === 'aion') loadRecentThoughts();
-  }, { reconcile: () => { loadDiaries(); loadRecentThoughts(); } });
+    if (msg.type === 'recent_thoughts_changed' && msg.data?.actor === 'aion' && typeof loadRecentThoughts === 'function') loadRecentThoughts();
+  }, { reconcile: () => { loadDiaries(); if (typeof loadRecentThoughts === 'function') loadRecentThoughts(); } });
 }
 
 (async function init() {

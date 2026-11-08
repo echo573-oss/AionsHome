@@ -39,16 +39,18 @@ test('memory reconnection reads the current server list without applying old eve
 });
 
 test('diary reconnect is wired to a fresh list, including missed deletions', () => {
-  let options, handler, loads = 0;
+  let options, handler, loads = 0, thoughtLoads = 0;
   const ctx = vm.createContext({
     connectCommonWS(fn, opts) { handler = fn; options = opts; },
     loadDiaries() { loads++; },
+    loadRecentThoughts() { thoughtLoads++; },
   });
   vm.runInContext(block(read('diary.html'), 'function connectDiaryWS', '(async function init()'), ctx);
   ctx.connectDiaryWS();
   options.reconcile();
   handler({ type: 'diary_updated' });
   assert.equal(loads, 2);
+  assert.equal(thoughtLoads, 1);
 });
 
 test('overlapping wish refreshes retain the latest response', async () => {
