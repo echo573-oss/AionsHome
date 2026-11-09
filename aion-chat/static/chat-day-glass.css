@@ -1,12 +1,12 @@
 /* Shared daylight glass for chat and theater. */
 html[data-theme="light"] {
-  background: #f5e5e4;
+  background: #F7F3EB;
 }
 
 body[data-theme="light"],
 body.theater-page[data-theme="light"] {
   color-scheme: light;
-  --bg: #f5e5e4;
+  --bg: #F7F3EB;
   --surface: rgba(255, 252, 251, 0.48);
   --surface2: rgba(255, 255, 255, 0.38);
   --surface3: rgba(255, 255, 255, 0.56);
@@ -21,10 +21,10 @@ body.theater-page[data-theme="light"] {
   --accent2: #8f425f;
   --accent3: #9c719b;
   --connor-accent: #695d96;
-  --user-bg: rgba(255, 242, 247, 0.52);
-  --ai-bg: rgba(250, 255, 251, 0.48);
+  --user-bg: #D6B89C;
+  --ai-bg: #FFFDF9;
   --aion-bg: var(--ai-bg);
-  --connor-bg: rgba(252, 249, 255, 0.50);
+  --connor-bg: #F5ECE1;
   --glow: 0 0 18px rgba(175, 112, 139, 0.12);
   --soft-shadow: 0 14px 42px rgba(94, 62, 75, 0.13);
   --glass-panel: linear-gradient(160deg, rgba(255, 255, 255, 0.56), rgba(255, 252, 250, 0.30));
@@ -47,9 +47,9 @@ body[data-theme="light"] .chat-area {
 
 body[data-theme="light"] .chat-area::before {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 250, 247, 0.10)),
-    url('/public/chat-bg-light.jpg') center/100% 100% no-repeat;
-  opacity: 1;
+    linear-gradient(180deg, rgba(255, 252, 247, 0.14), rgba(247, 243, 235, 0.06)),
+    url('/public/chat-bg-light.jpg') center / cover no-repeat;
+  opacity: 0.88;
 }
 
 body[data-theme="light"] :is(.sidebar, .chat-header, .input-area, .composer, .voice-mode-row) {
@@ -153,28 +153,26 @@ body[data-theme="light"] :is(.private-ai-message-content, .ai-message-content, .
 }
 
 body[data-theme="light"] .msg-row.user .msg-bubble,
-body[data-theme="light"] .message-row.user .msg-content .bubble,
-body[data-theme="light"] .msg-row.assistant .msg-bubble,
-body[data-theme="light"] .message-row.aion .msg-content .bubble,
-body[data-theme="light"] .message-row.connor .msg-content .bubble {
-  border-color: rgba(99, 79, 77, 0.16);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.20), 0 4px 16px rgba(94, 62, 75, 0.09);
-  backdrop-filter: blur(12px) saturate(1.1);
-  -webkit-backdrop-filter: blur(12px) saturate(1.1);
-}
-
-body[data-theme="light"] .msg-row.user .msg-bubble,
 body[data-theme="light"] .message-row.user .msg-content .bubble {
-  background: var(--user-bg);
-}
-
-body[data-theme="light"] .user-message-unit {
-  --user-bg: rgba(255, 242, 247, 0.45);
+  background: #D6B89C !important;
+  color: #382618 !important;
+  border: 1px solid rgba(170, 130, 95, 0.38) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.45), 0 4px 18px rgba(138, 90, 50, 0.12) !important;
 }
 
 body[data-theme="light"] .msg-row.assistant .msg-bubble,
-body[data-theme="light"] .message-row.aion .msg-content .bubble {
-  background: var(--aion-bg);
+body[data-theme="light"] .message-row.aion .msg-content :is(.bubble, .ai-message-content) {
+  background: #FFFDF9 !important;
+  color: #4A3B32 !important;
+  border: 1px solid #EBE0D0 !important;
+  box-shadow: inset 0 1px 1px #FFFFFF, 0 4px 18px rgba(184, 150, 110, 0.10) !important;
+}
+
+body[data-theme="light"] .message-row.connor .msg-content :is(.bubble, .ai-message-content) {
+  background: #F5ECE1 !important;
+  color: #4A3B32 !important;
+  border: 1px solid #DFD2C0 !important;
+  box-shadow: inset 0 1px 1px #FFFFFF, 0 4px 18px rgba(184, 150, 110, 0.08) !important;
 }
 
 body[data-theme="light"] .assistant-message-unit .private-ai-message-content:not(.empty-msg-bubble) {

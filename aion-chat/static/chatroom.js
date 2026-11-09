@@ -3069,12 +3069,9 @@ function crEnsureMsgMenu(row, sender, msgId) {
 
 function crBubbleParts(raw, isUser = false) {
   const text = raw || '';
-  if (isUser) {
-    return window.ChatroomMarkdown?.splitUserBubbleParts
-      ? window.ChatroomMarkdown.splitUserBubbleParts(text)
-      : text.split(/\n+/).map(part => part.trim()).filter(Boolean);
-  }
-  return text.trim() ? [text] : [];
+  return window.ChatroomMarkdown?.splitUserBubbleParts
+    ? window.ChatroomMarkdown.splitUserBubbleParts(text)
+    : text.split(/\n+/).map(part => part.trim()).filter(Boolean);
 }
 
 function crMessageContentItems(raw, isUser = false) {
@@ -3212,7 +3209,7 @@ function crRenderMessageItems(items, { sender, name, avatar, msgId, msg, fmt, is
     ? msgHTML(item.message)
     : item.type === 'monologue'
       ? `<div class="inner-monologue-line">${esc(item.text)}</div>`
-      : `<div class="${isUser ? 'bubble' : 'ai-message-content'} markdown-body">${crMarkdownMessageHtml(item.text, isUser)}</div>`
+      : `<div class="bubble ${isUser ? '' : 'ai-message-content '}markdown-body">${crMarkdownMessageHtml(item.text, isUser)}</div>`
   ).join('');
   return crMessageUnitHtml({
     sender,
@@ -3988,7 +3985,7 @@ function startStreamingBubble(sender, id) {
   streamingLookup = null;
   const name = crName(sender);
   const avatar = AVATARS[sender] || AVATARS.user;
-  const liveContentClass = sender === 'user' ? 'bubble markdown-body' : 'ai-message-content markdown-body';
+  const liveContentClass = sender === 'user' ? 'bubble markdown-body' : 'bubble ai-message-content markdown-body';
   const createdAt = Date.now() / 1000;
   const senderLine = crMsgSenderLineHtml(sender, name, id, { id, sender, created_at: createdAt }, { tts: false });
 

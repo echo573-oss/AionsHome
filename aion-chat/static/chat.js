@@ -2101,11 +2101,9 @@ function privateMessageContentItems(value, isUser = false) {
   const text = String(value || '');
   const items = [];
   const monologueRe = /[\[【]心里嘀咕[：:]\s*([^\]】]+?)[\]】]/g;
-  const parts = isUser
-    ? (window.ChatroomMarkdown?.splitUserBubbleParts
-        ? window.ChatroomMarkdown.splitUserBubbleParts(text)
-        : text.split(/\n+/).map(part => part.trim()).filter(Boolean))
-    : (text.trim() ? [text] : []);
+  const parts = window.ChatroomMarkdown?.splitUserBubbleParts
+    ? window.ChatroomMarkdown.splitUserBubbleParts(text)
+    : text.split(/\n+/).map(part => part.trim()).filter(Boolean);
   for (const part of parts) {
     let cursor = 0;
     let match;
@@ -2169,7 +2167,7 @@ function renderPrivateMessageHTML(m) {
     ? privateSystemMessageHTML(item.message)
     : item.type === 'monologue'
       ? `<div class="inner-monologue-line"><div class="inner-monologue-content markdown-body">${privateMarkdownMessageHtml(item.text, isUser)}</div></div>`
-      : `<div class="${isUser ? 'msg-bubble' : 'private-ai-message-content'} markdown-body">${privateMarkdownMessageHtml(item.text, isUser)}</div>`
+      : `<div class="${isUser ? 'msg-bubble' : 'private-ai-message-content msg-bubble'} markdown-body">${privateMarkdownMessageHtml(item.text, isUser)}</div>`
   ).join('');
   let contentHtml = textHtml;
   if (hasStandaloneCard) {
@@ -2206,7 +2204,7 @@ function updatePrivateStreamingMessage(messageId, display) {
     ? window.KitchenCards.lookupHTML(item.lookup,worldBook.ai_name)
     : item.type === 'monologue'
     ? `<div class="inner-monologue-line"><div class="inner-monologue-content markdown-body">${privateMarkdownMessageHtml(item.text, false)}</div></div>`
-    : `<div class="private-ai-message-content markdown-body">${privateMarkdownMessageHtml(item.text, false)}</div>`
+    : `<div class="private-ai-message-content msg-bubble markdown-body">${privateMarkdownMessageHtml(item.text, false)}</div>`
   ).join('');
 }
 

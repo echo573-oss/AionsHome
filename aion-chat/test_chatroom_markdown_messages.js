@@ -299,15 +299,14 @@ test('user identity header sits above the right-aligned bubble', () => {
   assert.ok(content < bubble, 'user bubble should begin below the identity header');
 });
 
-test('AI markdown is one wide text flow without a bubble or repeated avatar', () => {
+test('AI markdown is split into bubbles per paragraph without repeated avatar', () => {
   const html = loadMessageRenderer()({
     id: 'ai-1', sender: 'aion', created_at: 1, attachments: [],
     content: '## 醒得正好。\n\n先喝水，再慢慢起身。\n\n*别着急。*',
   });
 
   assert.equal((html.match(/class="avatar"/g) || []).length, 1);
-  assert.doesNotMatch(html, /class="bubble/);
-  assert.equal((html.match(/class="ai-message-content markdown-body"/g) || []).length, 1);
+  assert.equal((html.match(/class="bubble ai-message-content markdown-body"/g) || []).length, 3);
   assert.match(html, /<h2>醒得正好。<\/h2>/);
   assert.match(html, /<em>别着急。<\/em>/);
 });
@@ -338,14 +337,13 @@ test('streaming AI reply uses the same identity header above its live body', () 
   assert.ok(html.indexOf('class="message-header"') < html.indexOf('class="message-live-content'));
 });
 
-test('AI single line breaks stay within a paragraph and blank lines start another', () => {
+test('AI lines are split into bubbles matching user paragraph rhythm', () => {
   const html = loadMessageRenderer()({
     id: 'ai-2', sender: 'connor', created_at: 1, attachments: [],
     content: '第一行。\n第二行。\n\n第二段。',
   });
 
   assert.equal((html.match(/class="avatar"/g) || []).length, 1);
-  assert.equal((html.match(/class="ai-message-content markdown-body"/g) || []).length, 1);
-  assert.equal((html.match(/<p>/g) || []).length, 2);
-  assert.match(html, /第一行。<br>\n<span class="line-indent" aria-hidden="true"><\/span>第二行。/);
+  assert.equal((html.match(/class="bubble ai-message-content markdown-body"/g) || []).length, 3);
+  assert.equal((html.match(/<p>/g) || []).length, 3);
 });
