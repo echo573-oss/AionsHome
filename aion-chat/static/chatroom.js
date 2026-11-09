@@ -3034,7 +3034,7 @@ function crMsgSenderLineHtml(sender, name, msgId, msg = null, opts = {}) {
   if (sender !== 'user') {
     return `<div class="sender-line"><span class="sender-label ${sender}">${esc(name)}</span>${timeHtml}${menuHtml}${feedbackHtml}${ttsHtml}${memoryHtml}</div>`;
   }
-  return timeHtml || menuHtml ? `<div class="sender-line user-line">${timeHtml}${menuHtml}</div>` : '';
+  return `<div class="sender-line user-line">${menuHtml}${timeHtml}<span class="sender-label user">${esc(name)}</span></div>`;
 }
 
 function crEnsureMsgMenu(row, sender, msgId) {

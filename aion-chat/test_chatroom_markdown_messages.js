@@ -297,6 +297,7 @@ test('user identity header sits above the right-aligned bubble', () => {
   assert.ok(unit >= 0, 'user message should expose its right-aligned layout');
   assert.ok(unit < header && header < avatar && avatar < content, 'avatar should sit in the user header above the content');
   assert.ok(content < bubble, 'user bubble should begin below the identity header');
+  assert.match(html, /<span class="sender-label user">Test User<\/span>/);
 });
 
 test('AI markdown is split into bubbles per paragraph without repeated avatar', () => {
