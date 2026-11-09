@@ -7,6 +7,7 @@ from collections.abc import AsyncIterable, Callable
 
 from ai_providers import CLI_STATUS_PREFIX, stream_ai
 from capabilities import is_capability_enabled
+from context_blocks import CTX_EXTERNAL, context_message
 from mcp_client import is_chat_read_tool_name, is_chat_write_tool_name, mcp_manager
 from mcp_approvals import approval_registry
 
@@ -233,7 +234,8 @@ async def inject_mcp_context(
     scope_type: str = "private", scope_id: str = "",
 ) -> bool:
     """按用户明确意图预读或建立待确认写入提案，回复时引用回执。"""
-    if is_explicit_write_intent(user_text):
+    is_write = is_explicit_write_intent(user_text)
+    if is_write:
         context = await maybe_stage_mcp_write(
             user_text, model_key, actor=actor, model_stream=model_stream,
             scope_type=scope_type, scope_id=scope_id,
@@ -248,7 +250,16 @@ async def inject_mcp_context(
         (idx for idx in range(len(history) - 1, -1, -1) if history[idx].get("role") == "user"),
         len(history),
     )
-    history.insert(last_user, {"role": "user", "content": context})
+    if is_write:
+        # 写入提案回执是应用给模型的操作指引（让模型转达"去点确认"），
+        # 不是外部数据；位置与角色都保持原样，授权与确认流程不受影响。
+        history.insert(last_user, {"role": "user", "content": context})
+    else:
+        # 读取回执是外部工具返回的数据 → 资料通道，明确标注是资料不是指令
+        message = context_message(CTX_EXTERNAL, context)
+        if message is None:
+            message = {"role": "user", "content": context}
+        history.insert(last_user, message)
     return True
 
 

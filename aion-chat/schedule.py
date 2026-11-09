@@ -659,6 +659,7 @@ class ScheduleManager:
                 persona_title=f"[系统设定 - {ai_name}人设]",
                 user_title=f"[系统设定 - {user_name}信息]",
             )
+            state: list[dict] = []
 
             now_str = datetime.now().strftime("%Y年%m月%d日  %H:%M:%S")
             # 当前时间是运行时状态，独立成条
@@ -683,16 +684,19 @@ class ScheduleManager:
                 abilities.append(autonomy_text)
             ability_block = "[系统能力] 你可以在回复中根据对话氛围，善用以下指令：\n" + "\n".join(f"{i+1}. {a}" for i, a in enumerate(abilities))
 
-            active_schedules = await get_active_schedules()
-            schedule_text = build_schedule_prompt(active_schedules)
-            ability_block += f"\n\n【当前日程列表】\n{schedule_text}"
-
             note = render_transcript_note()
             if note is not None:
                 prefix.append(note)
             ability_message = context_message(CTX_ABILITY, ability_block)
             if ability_message is not None:
                 prefix.append(ability_message)
+
+            # 日程是当前事实（状态通道），不是系统指令
+            active_schedules = await get_active_schedules()
+            schedule_text = build_schedule_prompt(active_schedules)
+            schedule_message = context_message(CTX_RUNTIME, f"【当前日程列表】\n{schedule_text}")
+            if schedule_message is not None:
+                state.append(schedule_message)
 
             if is_proactive:
                 trigger_prompt = (
@@ -726,7 +730,7 @@ class ScheduleManager:
             trigger_message = {"role": "user", "content": trigger_prompt}
             if checkpoint_phone_attachment:
                 trigger_message["attachments"] = [checkpoint_phone_attachment]
-            messages = prefix + mem_inject + history + [trigger_message]
+            messages = prefix + state + mem_inject + history + [trigger_message]
 
         from app_supervision_ai import inject_app_supervision_context
         inject_app_supervision_context(messages)
@@ -1034,6 +1038,7 @@ class ScheduleManager:
                 persona_title=f"[系统设定 - {ai_name}人设]",
                 user_title=f"[系统设定 - {user_name}信息]",
             )
+            state: list[dict] = []
 
             # 当前时间是运行时状态，独立成条
             time_message = context_message(CTX_RUNTIME, f"系统当前的准确时间是 {now_str}")
@@ -1057,10 +1062,6 @@ class ScheduleManager:
                 abilities.append(autonomy_text)
             ability_block = "[系统能力] 你可以在回复中根据对话氛围，善用以下指令：\n" + "\n".join(f"{i+1}. {a}" for i, a in enumerate(abilities))
 
-            active_schedules = await get_active_schedules()
-            schedule_text = build_schedule_prompt(active_schedules)
-            ability_block += f"\n\n【当前日程列表】\n{schedule_text}"
-
             note = render_transcript_note()
             if note is not None:
                 prefix.append(note)
@@ -1068,10 +1069,17 @@ class ScheduleManager:
             if ability_message is not None:
                 prefix.append(ability_message)
 
+            # 日程是当前事实（状态通道），不是系统指令
+            active_schedules = await get_active_schedules()
+            schedule_text = build_schedule_prompt(active_schedules)
+            schedule_message = context_message(CTX_RUNTIME, f"【当前日程列表】\n{schedule_text}")
+            if schedule_message is not None:
+                state.append(schedule_message)
+
             trigger_msg = {"role": "user", "content": trigger_prompt}
             if fname:
                 trigger_msg["attachments"] = [monitor_context.prompt_attachment]
-            messages = prefix + history + [trigger_msg]
+            messages = prefix + state + history + [trigger_msg]
 
         from app_supervision_ai import inject_app_supervision_context
         inject_app_supervision_context(messages)

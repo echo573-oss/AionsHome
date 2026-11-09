@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import ai_providers
 import chatroom
-from context_blocks import CTX_RUNTIME
+from context_blocks import CTX_RUNTIME, STATE_NOTICE
 
 
 class RoleDeviceContextInjectionTest(unittest.IsolatedAsyncioTestCase):
@@ -26,9 +26,10 @@ class RoleDeviceContextInjectionTest(unittest.IsolatedAsyncioTestCase):
             )
 
         contents = [message["content"] for message in prepared]
-        self.assertEqual("【设备当前状态】\n电脑：刚刚有键鼠输入。", contents[2])
-        # 设备状态是运行时状态，走指令通道，不再配伪造的确认回复
-        self.assertEqual("system", prepared[2]["role"])
+        # 设备状态是此刻的事实——状态通道（user 角色 + 状态标注），不是系统指令
+        self.assertIn("【设备当前状态】\n电脑：刚刚有键鼠输入。", contents[2])
+        self.assertIn(STATE_NOTICE, contents[2])
+        self.assertEqual("user", prepared[2]["role"])
         self.assertEqual(CTX_RUNTIME, prepared[2]["_ctx"])
         self.assertIn("[背景记忆]", contents[3])
         self.assertNotIn("【设备当前状态】", contents[-1])

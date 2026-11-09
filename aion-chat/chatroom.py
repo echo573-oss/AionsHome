@@ -36,6 +36,7 @@ from context_blocks import (
     CTX_RULES,
     CTX_RUNTIME,
     INSTRUCTION_KINDS,
+    STATE_KINDS,
     build_persona_prefix,
     context_message,
 )
@@ -1174,6 +1175,7 @@ async def build_aion_group_context(
         user_title=f"[系统设定 - {user_name}信息]",
         codex_instructions=load_codex_custom_instructions(),
     )
+    state: list[dict] = []
     data: list[dict] = []
 
     # 1. 注入系统能力、运行时状态与外部资料
@@ -1186,7 +1188,12 @@ async def build_aion_group_context(
         profile_query=query_text,
     )
     for segment in segments:
-        target = instructions if segment.kind in INSTRUCTION_KINDS else data
+        if segment.kind in INSTRUCTION_KINDS:
+            target = instructions
+        elif segment.kind in STATE_KINDS:
+            target = state
+        else:
+            target = data
         message = segment.to_message()
         if message is not None:
             target.append(message)
@@ -1230,7 +1237,9 @@ async def build_aion_group_context(
     )
     runtime_block, background_block, related_block = split_memory_blocks(mem_result)
     if runtime_block:
-        instructions.append(context_message(CTX_RUNTIME, runtime_block))
+        runtime_message = context_message(CTX_RUNTIME, runtime_block)
+        if runtime_message is not None:
+            state.append(runtime_message)
     for text in (background_block, related_block):
         message = context_message(CTX_MEMORY, text)
         if message is not None:
@@ -1252,8 +1261,8 @@ async def build_aion_group_context(
         include_image_attachments=include_image_attachments,
         include_note=False,
     )
-    # 指令通道在前、资料通道在后，真实对话最后——各家 API 都能先收到系统指令
-    history = instructions + data + timeline_history
+    # 指令 → 状态 → 资料 → 真实对话——各家 API 都能先收到系统指令
+    history = instructions + state + data + timeline_history
 
     return history, mem_result.get("digest_result", {})
 
@@ -1277,6 +1286,7 @@ async def build_connor_group_context(
     history = []
     context_limit = max(1, int(context_limit or 30))
     instructions: list[dict] = []
+    state: list[dict] = []
     data: list[dict] = []
 
     wb = load_worldbook()
@@ -1303,7 +1313,12 @@ async def build_connor_group_context(
         profile_query=query_text,
     )
     for segment in segments:
-        target = instructions if segment.kind in INSTRUCTION_KINDS else data
+        if segment.kind in INSTRUCTION_KINDS:
+            target = instructions
+        elif segment.kind in STATE_KINDS:
+            target = state
+        else:
+            target = data
         message = segment.to_message()
         if message is not None:
             target.append(message)
@@ -1359,7 +1374,9 @@ async def build_connor_group_context(
     )
     runtime_block, background_block, related_block = split_memory_blocks(mem_result)
     if runtime_block:
-        instructions.append(context_message(CTX_RUNTIME, runtime_block))
+        runtime_message = context_message(CTX_RUNTIME, runtime_block)
+        if runtime_message is not None:
+            state.append(runtime_message)
     for text in (background_block, related_block):
         message = context_message(CTX_MEMORY, text)
         if message is not None:
@@ -1382,7 +1399,7 @@ async def build_connor_group_context(
         include_image_attachments=include_image_attachments,
         include_note=False,
     )
-    history = instructions + data + timeline_history
+    history = instructions + state + data + timeline_history
 
     return history, mem_result.get("digest_result", {})
 
@@ -1405,6 +1422,7 @@ async def build_connor_1v1_context(
     messages = []
     context_limit = max(1, int(context_limit or 30))
     instructions: list[dict] = []
+    state: list[dict] = []
     data: list[dict] = []
 
     wb = load_worldbook()
@@ -1426,7 +1444,12 @@ async def build_connor_1v1_context(
         include_kitchen=include_kitchen, profile_query=query_text,
     )
     for segment in segments:
-        target = instructions if segment.kind in INSTRUCTION_KINDS else data
+        if segment.kind in INSTRUCTION_KINDS:
+            target = instructions
+        elif segment.kind in STATE_KINDS:
+            target = state
+        else:
+            target = data
         message = segment.to_message()
         if message is not None:
             target.append(message)
@@ -1481,7 +1504,9 @@ async def build_connor_1v1_context(
     )
     runtime_block, background_block, related_block = split_memory_blocks(mem_result)
     if runtime_block:
-        instructions.append(context_message(CTX_RUNTIME, runtime_block))
+        runtime_message = context_message(CTX_RUNTIME, runtime_block)
+        if runtime_message is not None:
+            state.append(runtime_message)
     for text in (background_block, related_block):
         message = context_message(CTX_MEMORY, text)
         if message is not None:
@@ -1500,7 +1525,7 @@ async def build_connor_1v1_context(
         include_image_attachments=include_image_attachments,
         include_note=False,
     )
-    messages = instructions + data + timeline_history
+    messages = instructions + state + data + timeline_history
 
     return messages, mem_result.get("digest_result", {})
 

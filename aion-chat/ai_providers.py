@@ -14,6 +14,7 @@ from context_blocks import (
     CTX_RUNTIME,
     DATA_KINDS,
     INSTRUCTION_KINDS,
+    STATE_KINDS,
     context_kind,
     context_message,
     is_data_message,
@@ -915,10 +916,12 @@ def _build_cli_prompt(
     图片/音频附件转为本地绝对路径，由 CLI 自行读取文件（避免 base64 超长）。
 
     上下文按通道渲染，各模型线路看到的语义层级一致：
-    1. **指令通道**（人设 / 规则 / 能力 / 运行时状态）→ ``[System Instruction]``
-    2. **资料通道**（记忆 / 外部资料）→ ``[Reference Data]``，
+    1. **指令通道**（人设 / 规则 / 能力）→ ``[System Instruction]``
+    2. **状态通道**（当前时间 / 日程 / 位置 / 设备状态）→ ``[Current State]``，
+       是此刻的事实，不是要执行的任务
+    3. **资料通道**（记忆 / 外部资料）→ ``[Reference Data]``，
        明确标注为背景资料而不是要求执行的内容
-    3. **真实对话** → ``[User]`` / ``[Assistant]`` 交替块
+    4. **真实对话** → ``[User]`` / ``[Assistant]`` 交替块
 
     其它要点：
     - 连续同角色消息合并到同一个块，不重复发标签头
@@ -932,16 +935,20 @@ def _build_cli_prompt(
     """
     # ── 第 0 步：按通道拆分上下文 ──
     instruction_chunks: list[str] = []
+    state_chunks: list[str] = []
     data_chunks: list[str] = []
     conversation: list = []
     for message in messages or []:
         if not isinstance(message, dict):
             continue
         kind = context_kind(message)
+        content = (message.get("content", "") or "").strip()
         if kind in DATA_KINDS:
-            data_chunks.append((message.get("content", "") or "").strip())
+            data_chunks.append(content)
+        elif kind in STATE_KINDS:
+            state_chunks.append(content)
         elif kind in INSTRUCTION_KINDS or message.get("role") == "system":
-            instruction_chunks.append((message.get("content", "") or "").strip())
+            instruction_chunks.append(content)
         else:
             conversation.append(message)
 
@@ -1022,10 +1029,14 @@ def _build_cli_prompt(
 
     # 第三步：拼最终 prompt
     parts = []
-    # 指令通道：人设、规则、能力、运行时状态
+    # 指令通道：人设、规则、能力
     instruction_text = "\n\n".join(chunk for chunk in instruction_chunks if chunk)
     if instruction_text:
         parts.append(f"[System Instruction]\n{instruction_text}")
+    # 状态通道：当前时间、日程、位置、设备状态——是事实，不是指令
+    state_text = "\n\n".join(chunk for chunk in state_chunks if chunk)
+    if state_text:
+        parts.append(f"[Current State]\n{state_text}")
     # 资料通道：记忆与外部资料，明确标注为背景数据而不是指令
     data_text = "\n\n".join(chunk for chunk in data_chunks if chunk)
     if data_text:

@@ -121,10 +121,10 @@ from context_blocks import (
     CTX_RUNTIME,
     DATA_KINDS,
     INSTRUCTION_KINDS,
+    STATE_KINDS,
     ContextSegment,
     build_persona_prefix,
     channel_messages,
-    context_message,
     insert_context_message,
     segments_to_messages,
 )
@@ -224,6 +224,7 @@ async def _build_private_context_messages(
     )
 
     instructions = [s for s in segments if s.kind in INSTRUCTION_KINDS]
+    state = [s for s in segments if s.kind in STATE_KINDS]
     data = [s for s in segments if s.kind in DATA_KINDS]
     messages = segments_to_messages(instructions)
 
@@ -251,8 +252,11 @@ async def _build_private_context_messages(
     if note is not None:
         messages.append(note)
 
-    # 当前时间与健康摘要属于运行时状态，也走指令通道；
-    # 它是 Prompt Cache 的分界点——之前的内容相对稳定，之后全是动态内容。
+    # 状态通道：日程 / 位置 / 设备状态，然后是当前时间与健康摘要。
+    # 这些是此刻的事实，不是指令，所以走 user 角色而不是 system。
+    messages += segments_to_messages(state)
+
+    # 当前时间是 Prompt Cache 的分界点——之前的内容相对稳定，之后全是动态内容。
     now_str = datetime.now().strftime("%Y年%m月%d日  %H:%M:%S")
     runtime_text = f"系统当前的准确时间是 {now_str}"
     health_text = await build_health_summary()

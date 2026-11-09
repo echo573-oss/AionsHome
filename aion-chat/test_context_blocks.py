@@ -72,12 +72,19 @@ class ContextBlockChannelTest(unittest.TestCase):
     """内部上下文结构的通道语义。"""
 
     def test_instruction_blocks_use_system_role(self):
-        for kind in (CTX_PERSONA, CTX_RULES, CTX_ABILITY, CTX_RUNTIME):
+        for kind in (CTX_PERSONA, CTX_RULES, CTX_ABILITY):
             with self.subTest(kind=kind):
                 message = context_message(kind, "内容")
                 self.assertEqual(message["role"], "system")
                 self.assertEqual(message["_ctx"], kind)
                 self.assertEqual(message["content"], "内容")
+
+    def test_runtime_blocks_are_state_not_instruction(self):
+        # 时间 / 日程 / 位置 / 设备状态是此刻的事实，不该自动拿系统指令优先级
+        message = context_message(CTX_RUNTIME, "系统当前的准确时间是 12:00")
+        self.assertEqual(message["role"], "user")
+        self.assertEqual(message["_ctx"], CTX_RUNTIME)
+        self.assertIn("当前状态", message["content"])
 
     def test_data_blocks_are_marked_as_reference_material(self):
         for kind in (CTX_MEMORY, CTX_EXTERNAL):
@@ -95,20 +102,23 @@ class ContextBlockChannelTest(unittest.TestCase):
 
     def test_insert_context_message_inserts_one_marked_message(self):
         messages = [{"role": "user", "content": "hi"}]
-        inserted = insert_context_message(messages, 0, CTX_RUNTIME, "系统当前的准确时间是 12:00")
+        inserted = insert_context_message(messages, 0, CTX_ABILITY, "[系统能力]\n1. 能力")
         self.assertEqual(inserted, 1)
         self.assertEqual(messages[0]["role"], "system")
-        self.assertEqual(messages[0]["_ctx"], CTX_RUNTIME)
+        self.assertEqual(messages[0]["_ctx"], CTX_ABILITY)
         self.assertEqual(len(messages), 2)
 
-    def test_split_context_messages_separates_three_channels(self):
-        instructions, data, conversation = split_context_messages([
+    def test_split_context_messages_separates_four_channels(self):
+        instructions, state, data, conversation = split_context_messages([
             {"role": "system", "content": "persona", "_ctx": CTX_PERSONA},
             context_message(CTX_ABILITY, "abilities"),
+            context_message(CTX_RUNTIME, "现在是 12:00"),
             context_message(CTX_MEMORY, "memories"),
             {"role": "user", "content": "你好"},
         ])
         self.assertEqual([m["content"] for m in instructions], ["persona", "abilities"])
+        self.assertEqual(len(state), 1)
+        self.assertEqual(state[0]["_ctx"], CTX_RUNTIME)
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]["_ctx"], CTX_MEMORY)
         self.assertEqual([m["content"] for m in conversation], ["你好"])
@@ -254,13 +264,14 @@ class PrivateChatContextTest(unittest.IsolatedAsyncioTestCase):
         messages = await self._build(play_prompt="hidden-card", conv_id="conv-1")
         self.assertFalse([m for m in messages if m.get("role") == "assistant"])
 
-    async def test_channels_are_ordered_instruction_then_data(self):
+    async def test_channels_are_ordered_instruction_then_state_then_data(self):
         messages = await self._build(play_prompt="hidden-card", conv_id="conv-1")
         kinds = [m["_ctx"] for m in messages]
         # 能力 → 玩法提示（规则）→ 时间线说明（规则）→ 运行时状态 → 外部资料
         self.assertEqual(kinds, [CTX_ABILITY, CTX_RULES, CTX_RULES, CTX_RUNTIME, CTX_EXTERNAL])
         roles = [m["role"] for m in messages]
-        self.assertEqual(roles, ["system", "system", "system", "system", "user"])
+        # 运行时状态是事实，走 user 角色；只有指令通道拿 system
+        self.assertEqual(roles, ["system", "system", "system", "user", "user"])
 
     async def test_ability_and_runtime_and_memory_are_all_present(self):
         messages = await self._build()

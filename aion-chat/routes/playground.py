@@ -207,6 +207,28 @@ async def delete_log(log_id: str):
     return {"ok": True}
 
 
+# 供应商请求里只允许这些字段；内部元数据（_ctx / _timeline_sender 等）不能外泄
+_OUTBOUND_MESSAGE_KEYS = ("role", "content", "name", "tool_calls", "tool_call_id")
+
+
+def _sanitize_messages(messages: list) -> list:
+    """只保留供应商 API 认识的字段，剔除内部语义标记。
+
+    娱乐室的上下文带 `_ctx` 这类内部标记（人设 / 能力 / 记忆分属不同通道），
+    直接把原 dict 发出去等于把内部实现细节传给第三方，也会让严格的
+    OpenAI 兼容网关报"未识别的参数"。
+    """
+    cleaned = []
+    for message in messages or []:
+        if not isinstance(message, dict):
+            continue
+        cleaned.append({
+            key: value for key, value in message.items()
+            if key in _OUTBOUND_MESSAGE_KEYS
+        })
+    return cleaned
+
+
 # ── messages 裁剪：防止上下文无限增长 ──
 def _trim_messages(messages: list, max_chars: int = 40000) -> list:
     """
@@ -260,8 +282,8 @@ async def _call_ai_with_tools(messages: list, tools: list, model_cfg: dict,
     else:
         raise ValueError(f"不支持的 provider: {provider}")
 
-    # 裁剪 messages 防止上下文爆炸
-    trimmed = _trim_messages(messages)
+    # 裁剪 messages 防止上下文爆炸；并剔除内部元数据，不外泄给供应商
+    trimmed = _sanitize_messages(_trim_messages(messages))
 
     payload = {
         "model": model,
@@ -308,7 +330,7 @@ async def _stream_ai_text(messages: list, model_cfg: dict, cancel_event: asyncio
 
     payload = {
         "model": model,
-        "messages": messages,
+        "messages": _sanitize_messages(messages),
         "stream": True,
         "temperature": 0.8,
     }
