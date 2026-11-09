@@ -3806,3 +3806,15 @@ body[data-theme="light"] .lounge-report-card { background: var(--surface); }
 }
 .cr-image-retry::after { content: ''; position: absolute; inset: -5px -3px; border-radius: inherit; }
 .cr-image-retry:disabled { opacity: .65; cursor: default; }
+
+/* Desktop chatroom reading rhythm: match private-chat body spacing. */
+@media (min-width: 769px) {
+  .ai-message-content.markdown-body,
+  .message-row.user .bubble.markdown-body {
+    line-height: 1.62;
+  }
+  .ai-message-content.markdown-body > p:not(:last-child),
+  .message-row.user .bubble.markdown-body > p:not(:last-child) {
+    margin-bottom: .62em;
+  }
+}
