@@ -250,3 +250,8 @@ body[data-theme="light"] :is(.modal-overlay, .settings-overlay, .memory-overlay,
     -webkit-backdrop-filter: none;
   }
 }
+
+/* Daylight sidebar navigation stays softer than the primary action. */
+body[data-theme="light"] .sidebar-footer .sidebar-shortcut-grid > button { background: rgba(255,255,255,.34); border-color: rgba(153,99,123,.16); }
+body[data-theme="light"] .sidebar-footer .sidebar-home-link { background: rgba(255,252,250,.40); border-color: rgba(153,99,123,.28); }
+body[data-theme="light"] .sidebar-footer button:hover { background: rgba(255,255,255,.62); }
