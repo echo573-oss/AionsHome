@@ -254,5 +254,74 @@ class McpContextChannelTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(receipt, inserted["content"])
 
 
+class InjectorOrderingTests(unittest.IsolatedAsyncioTestCase):
+    """运行时注入的 system 消息必须落在指令区，不能排在用户发言之后。"""
+
+    async def test_autonomy_ability_lands_in_instruction_zone(self):
+        import autonomy_state
+
+        messages = [
+            {"role": "system", "content": "[系统设定 - 人设]"},
+            {"role": "user", "content": "[相关记忆]"},
+            {"role": "user", "content": "当前用户消息"},
+        ]
+        with patch.object(
+            autonomy_state, "autonomy_prompt_text", new=AsyncMock(return_value="【自主行动】")
+        ):
+            await autonomy_state.inject_autonomy_ability(messages, "aion")
+
+        self.assertEqual([m["role"] for m in messages], ["system", "system", "user", "user"])
+        self.assertEqual(messages[1]["content"], "【自主行动】")
+
+    def test_proactive_ability_lands_in_instruction_zone(self):
+        import proactive_companionship
+
+        messages = [
+            {"role": "system", "content": "[系统设定 - 人设]"},
+            {"role": "user", "content": "[相关记忆]"},
+            {"role": "user", "content": "当前用户消息"},
+        ]
+        with patch.object(
+            proactive_companionship, "proactive_ability_text", return_value="【高优先级要求】"
+        ):
+            proactive_companionship.inject_proactive_ability(messages, "aion")
+
+        self.assertEqual([m["role"] for m in messages], ["system", "system", "user", "user"])
+        self.assertEqual(messages[1]["content"], "【高优先级要求】")
+
+    def test_injectors_keep_system_before_user_in_a_camera_style_list(self):
+        import proactive_companionship
+
+        # camera.py 的消息形态：指令 + 状态 + 资料 + 真实对话
+        messages = [
+            {"role": "system", "content": "[系统设定 - 人设]"},
+            {"role": "system", "content": "[历史记录说明]"},
+            {"role": "user", "content": "[当前状态]"},
+            {"role": "user", "content": "[相关记忆]"},
+            {"role": "user", "content": "历史消息"},
+            {"role": "user", "content": "当前用户消息"},
+        ]
+        with patch.object(
+            proactive_companionship, "proactive_ability_text", return_value="【高优先级要求】"
+        ):
+            proactive_companionship.inject_proactive_ability(messages, "aion")
+
+        roles = [m["role"] for m in messages]
+        self.assertEqual(roles, ["system", "system", "system", "user", "user", "user", "user"])
+        # system 必须全部排在 user 之前
+        self.assertEqual(roles, sorted(roles, key=lambda r: 0 if r == "system" else 1))
+
+    def test_instruction_insert_index_helper(self):
+        from context_blocks import instruction_insert_index
+
+        self.assertEqual(
+            instruction_insert_index([{"role": "system"}, {"role": "system"}, {"role": "user"}]), 2
+        )
+        self.assertEqual(instruction_insert_index([{"role": "user"}, {"role": "user"}]), 0)
+        self.assertEqual(
+            instruction_insert_index([{"role": "user"}, {"role": "system"}, {"role": "user"}]), 2
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

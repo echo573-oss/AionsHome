@@ -11,6 +11,7 @@ from datetime import datetime
 import aiosqlite
 
 from config import DB_PATH, SETTINGS, save_settings
+from context_blocks import instruction_insert_index
 
 
 PROACTIVE_TYPE = "proactive"
@@ -53,10 +54,8 @@ def inject_proactive_ability(messages: list[dict], actor: str) -> list[dict]:
     text = proactive_ability_text(actor)
     if not text:
         return messages
-    insert_at = len(messages)
-    if messages and messages[-1].get("role") == "user":
-        insert_at -= 1
-    messages.insert(insert_at, {"role": "system", "content": text})
+    # 插进指令区（最后一条 system 之后），别落到用户发言后面
+    messages.insert(instruction_insert_index(messages), {"role": "system", "content": text})
     return messages
 
 

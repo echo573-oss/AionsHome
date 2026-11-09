@@ -266,6 +266,20 @@ def insert_context_message(
     return 1
 
 
+def instruction_insert_index(messages: list) -> int:
+    """指令通道消息该插在哪个位置。
+
+    放在指令区末尾——也就是最后一条 system 消息之后。
+    指令混到用户发言之后再发给供应商，部分 OpenAI 兼容网关会因为
+    "system 不在开头"而处理异常，所以这里统一保证 system 全部在前。
+    """
+    index = 0
+    for position, message in enumerate(messages or []):
+        if isinstance(message, dict) and message.get("role") == "system":
+            index = position + 1
+    return index
+
+
 def split_context_messages(messages: list) -> tuple[list, list, list, list]:
     """把消息列表拆成（指令通道，状态通道，资料通道，真实对话）四段。
 
