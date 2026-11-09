@@ -1,11 +1,17 @@
 """Check persona roles at context and provider boundaries without live model calls."""
-import ast
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import ai_providers
 import chatroom
+from context_blocks import (
+    CTX_ABILITY,
+    CTX_PERSONA,
+    CTX_RULES,
+    build_persona_prefix,
+    context_message,
+)
 from test_relay_provider_errors import FakeStreamResponse, fake_client_factory
 
 
@@ -15,40 +21,92 @@ WORLD = {
     'system_prompt': 'Creative rules',
 }
 
+# 这些话术是旧版伪对话注入留下的痕迹，目标路径里不该再出现
+LEGACY_ACK_PHRASES = (
+    '收到，我会',
+    '好的，需要时我会使用这些指令',
+    '明白了，我会',
+    '收到，我会在合适的时候自然提及',
+    '收到，我了解当前的游戏状况了',
+    '收到，我参考这些记忆',
+    '收到，我了解最近的对话内容了',
+    '收到，我只延续这场独立约会',
+)
+
 
 class SystemMessageRolesTest(unittest.IsolatedAsyncioTestCase):
-    def test_private_and_followup_prefixes_use_system_without_fake_replies(self):
-        # Execute the actual prefix blocks, without starting route side effects.
-        for filename in ('routes/chat.py', 'routes/chatroom.py'):
-            tree = ast.parse((Path(__file__).parent / filename).read_text(encoding='utf-8'))
-            blocks = [node for node in ast.walk(tree) if isinstance(node, ast.If)
-                      and isinstance(node.test, (ast.Call, ast.BoolOp))
-                      and any(f'wb.get({key!r})' in ast.unparse(node.test)
-                              for key in ('ai_persona', 'user_persona', 'system_prompt'))]
-            self.assertTrue(blocks)
-            for enabled in (True, False):
-                for block in blocks:
-                    messages = []
-                    env = dict(wb={**WORLD, 'system_prompt_enabled': enabled},
-                               ai_name='Sol', user_name='Mira', sender='aion',
-                               prefix=messages, prefix_msgs=messages, messages=messages)
-                    exec(compile(ast.Module(body=[block], type_ignores=[]), filename, 'exec'), env)
-                    with self.subTest(filename=filename, line=block.lineno, enabled=enabled):
-                        key = next(key for key in ('ai_persona', 'user_persona', 'system_prompt')
-                                   if f'wb.get({key!r})' in ast.unparse(block.test))
-                        if key == 'system_prompt' and not enabled:
-                            self.assertEqual(messages, [])
-                        else:
-                            self.assertEqual(len(messages), 1)
-                            self.assertEqual(messages[0]['role'], 'system')
-                            self.assertIn(WORLD[key], messages[0]['content'])
+    def test_persona_prefix_helper_builds_system_messages_in_fixed_order(self):
+        messages = build_persona_prefix(
+            WORLD,
+            persona_title='[系统设定 - Sol人设]',
+            user_title='[系统设定 - Mira信息]',
+            codex_instructions='本地指令',
+        )
+        self.assertEqual([m['role'] for m in messages], ['system'] * 4)
+        self.assertEqual(messages[0]['_ctx'], CTX_RULES)    # 本地个性化指令
+        self.assertEqual(messages[1]['_ctx'], CTX_PERSONA)  # 人设
+        self.assertEqual(messages[2]['_ctx'], CTX_PERSONA)  # 用户信息
+        self.assertEqual(messages[3]['_ctx'], CTX_RULES)    # 系统提示
+        self.assertIn('本地指令', messages[0]['content'])
+        self.assertIn(WORLD['ai_persona'], messages[1]['content'])
+        self.assertIn(WORLD['user_persona'], messages[2]['content'])
+        self.assertIn(WORLD['system_prompt'], messages[3]['content'])
+
+    def test_persona_prefix_respects_switches(self):
+        # 系统提示关掉后不下发
+        messages = build_persona_prefix(
+            {**WORLD, 'system_prompt_enabled': False},
+            persona_title='[系统设定 - Sol人设]',
+            user_title='[系统设定 - Mira信息]',
+        )
+        self.assertEqual(len(messages), 2)
+        # 人设关掉后不下发
+        messages = build_persona_prefix(
+            WORLD,
+            persona_title='[系统设定 - Sol人设]',
+            user_title='[系统设定 - Mira信息]',
+            include_ai_persona=False,
+        )
+        self.assertEqual(len(messages), 2)
+        self.assertNotIn(WORLD['ai_persona'], messages[0]['content'])
+
+    def test_persona_prefix_can_supply_an_explicit_persona(self):
+        messages = build_persona_prefix(
+            WORLD,
+            persona_title='',
+            user_title='[系统设定 - Mira信息]',
+            persona_text='Companion persona',
+            include_ai_persona=False,
+        )
+        self.assertEqual(messages[0]['content'], 'Companion persona')
+        self.assertEqual(messages[0]['_ctx'], CTX_PERSONA)
+
+    def test_routes_use_the_shared_prefix_helper_instead_of_inline_copies(self):
+        for filename in ('routes/chat.py', 'routes/chatroom.py', 'chatroom.py'):
+            text = (Path(__file__).parent / filename).read_text(encoding='utf-8')
+            with self.subTest(filename=filename):
+                self.assertIn('build_persona_prefix(', text)
+                self.assertNotIn('"role": "system", "content": f"[系统设定', text)
+
+    def test_target_modules_have_no_legacy_acknowledgement_phrases(self):
+        for filename in (
+            'routes/chat.py', 'chatroom.py', 'routes/chatroom.py',
+            'routes/playground.py', 'camera.py', 'fund.py', 'location.py',
+            'schedule.py', 'routes/moments.py', 'routes/theater.py',
+            'routes/date_theater.py', 'autonomy.py', 'lounge_actor_context.py',
+            'context_builder.py',
+        ):
+            text = (Path(__file__).parent / filename).read_text(encoding='utf-8')
+            for phrase in LEGACY_ACK_PHRASES:
+                with self.subTest(filename=filename, phrase=phrase):
+                    self.assertNotIn(phrase, text)
 
     async def test_group_and_companion_private_personas_are_system_messages(self):
         with (
             patch.object(chatroom, 'load_worldbook', return_value=WORLD),
             patch.object(chatroom, 'get_chatroom_names', return_value=('Mira', 'Sol', 'Nova')),
             patch.object(chatroom, '_read_connor_persona', return_value='Companion persona'),
-            patch.object(chatroom, 'build_ability_block', AsyncMock(return_value='')),
+            patch.object(chatroom, 'build_context_segments', AsyncMock(return_value=[])),
             patch.object(chatroom, 'append_intimacy_prompt'),
             patch.object(chatroom, 'with_current_device_context', side_effect=lambda messages, **kw: messages),
             patch.object(chatroom, 'fetch_merged_timeline', AsyncMock(return_value=[])),
@@ -82,16 +140,14 @@ class SystemMessageRolesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([m['role'] for m in payload['contents']], ['user', 'model', 'user'])
         self.assertEqual(ai_providers.build_multimodal_messages(messages), messages)
 
-    def test_cli_keeps_system_prefix_and_legacy_ability_pairs_together(self):
+    def test_cli_keeps_system_prefix_and_marked_context_together(self):
         prompt = ai_providers._build_cli_prompt([
             {'role': 'system', 'content': 'persona'},
             {'role': 'system', 'content': 'rules'},
-            {'role': 'user', 'content': 'abilities'},
-            {'role': 'assistant', 'content': '好的，需要时我会使用这些指令。'},
+            context_message(CTX_ABILITY, 'abilities'),
             {'role': 'user', 'content': 'hello'},
         ])
         self.assertIn('[System Instruction]\npersona\n\nrules\n\nabilities', prompt)
-        self.assertNotIn('好的，需要时', prompt)
         self.assertIn('[User]\nhello', prompt)
 
     async def test_companion_persona_is_added_even_with_other_system_messages(self):

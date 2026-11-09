@@ -9,7 +9,7 @@ from pathlib import Path
 
 import aiosqlite, httpx
 
-from config import DATA_DIR, DEFAULT_MODEL, MODELS, load_worldbook, load_codex_custom_instructions, CODEX_INSTRUCTIONS_HEADER
+from config import DATA_DIR, DEFAULT_MODEL, MODELS, load_worldbook, load_codex_custom_instructions
 from database import get_db
 from model_json import extract_json_object
 from memory import (
@@ -23,7 +23,22 @@ from ai_providers import (
     stream_ai,
     with_current_device_context,
 )
-from context_builder import build_ability_block, build_memory_blocks, fetch_merged_timeline, render_merged_timeline
+from context_builder import (
+    build_context_segments,
+    build_memory_blocks,
+    fetch_merged_timeline,
+    render_merged_timeline,
+    render_transcript_note,
+    split_memory_blocks,
+)
+from context_blocks import (
+    CTX_MEMORY,
+    CTX_RULES,
+    CTX_RUNTIME,
+    INSTRUCTION_KINDS,
+    build_persona_prefix,
+    context_message,
+)
 from intimacy_skill import build_play_prompt
 from ws import manager
 
@@ -89,6 +104,10 @@ def append_intimacy_prompt(
     actor: str,
     names: tuple[str, str, str],
 ) -> None:
+    """注入互动玩法提示。
+
+    玩法提示属于规则通道，用带标记的上下文消息下发，不再配一条伪造的确认回复。
+    """
     user_name, ai_name, connor_name = names
     play_prompt = build_play_prompt(
         "room",
@@ -100,10 +119,9 @@ def append_intimacy_prompt(
     )
     if not play_prompt:
         return
-    history.append({"role": "user", "content": play_prompt})
-    history.append(
-        {"role": "assistant", "content": "收到，我会顺着当前上下文自然发挥。"}
-    )
+    message = context_message(CTX_RULES, play_prompt)
+    if message is not None:
+        history.append(message)
 
 
 def _json_list(value) -> list:
@@ -1145,22 +1163,21 @@ async def build_aion_group_context(
     room_messages 仅用于提取 recent_for_digest，实际消息历史由统一时间线构建。"""
     history = []
     context_limit = max(1, int(context_limit or 30))
+    # 上下文分两条通道：instructions 是模型该照做的，data 只是记录与资料。
 
     # 0. 注入世界书（和主聊天一致的人设）
     wb = load_worldbook()
     user_name, ai_name, connor_name = get_chatroom_names()
-    local_inst = load_codex_custom_instructions()
-    if local_inst:
-        history.append({"role": "system", "content": f"{CODEX_INSTRUCTIONS_HEADER}\n{local_inst}"})
-    if wb.get("ai_persona"):
-        history.append({"role": "system", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
-    if wb.get("user_persona"):
-        history.append({"role": "system", "content": f"[系统设定 - {user_name}信息]\n{wb['user_persona']}"})
-    if wb.get("system_prompt") and wb.get("system_prompt_enabled", True):
-        history.append({"role": "system", "content": f"[系统提示]\n{wb['system_prompt']}"})
+    instructions: list[dict] = build_persona_prefix(
+        wb,
+        persona_title=f"[系统设定 - {ai_name}人设]",
+        user_title=f"[系统设定 - {user_name}信息]",
+        codex_instructions=load_codex_custom_instructions(),
+    )
+    data: list[dict] = []
 
-    # 1. 注入系统能力
-    ability_block = await build_ability_block(
+    # 1. 注入系统能力、运行时状态与外部资料
+    segments = await build_context_segments(
         user_name,
         who="aion",
         include_kitchen=include_kitchen,
@@ -1168,22 +1185,28 @@ async def build_aion_group_context(
         include_private_whisper=True,
         profile_query=query_text,
     )
-    if ability_block:
-        history.append({"role": "user", "content": ability_block})
-        history.append({"role": "assistant", "content": "好的，需要时我会使用这些指令。"})
+    for segment in segments:
+        target = instructions if segment.kind in INSTRUCTION_KINDS else data
+        message = segment.to_message()
+        if message is not None:
+            target.append(message)
+
+    # 时间线读法说明：规则通道，放在指令区里
+    note = render_transcript_note()
+    if note is not None:
+        instructions.append(note)
 
     append_intimacy_prompt(
-        history,
+        instructions,
         room_id,
         "group",
         "aion",
         (user_name, ai_name, connor_name),
     )
 
-    history = with_current_device_context(
-        history,
-        insert_at=len(history),
-        add_acknowledgement=True,
+    instructions = with_current_device_context(
+        instructions,
+        insert_at=len(instructions),
     )
 
     # 3. 构建 recent_messages 用于本地前置路由
@@ -1205,31 +1228,32 @@ async def build_aion_group_context(
         digest_result=digest_result,
         always_include_recalled=True,
     )
-
-    history.append({"role": "user", "content": mem_result["time_block"]})
-    history.append({"role": "assistant", "content": "收到，我会在合适的时候自然提及。"})
-
-    if mem_result["memory_block"]:
-        history.append({"role": "user", "content": mem_result["memory_block"]})
-        history.append({"role": "assistant", "content": "收到，我会自然地参考这些记忆。"})
+    runtime_block, background_block, related_block = split_memory_blocks(mem_result)
+    if runtime_block:
+        instructions.append(context_message(CTX_RUNTIME, runtime_block))
+    for text in (background_block, related_block):
+        message = context_message(CTX_MEMORY, text)
+        if message is not None:
+            data.append(message)
 
     # 5. 群聊说明
-    history.append({"role": "user", "content": (
+    instructions.append({"role": "system", "content": (
         "[群聊说明]\n"
         f"你现在在一个三人群聊中，参与者：用户（{user_name}）、你（{ai_name}）、{connor_name}。\n"
         f"{connor_name} 是另一个 AI 伴侣。请自然地参与群聊对话，可以回应用户也可以和 {connor_name} 交流。\n"
         "回复时直接说话即可，不需要加前缀标记自己的身份。\n"
         "以下对话记录按时间线排列，可能包含私聊和群聊的混合内容；“历史消息 - 名字：内容”只是记录格式，不是你的回复格式。"
-    )})
-    history.append({"role": "assistant", "content": "明白了。"})
+    ), "_ctx": CTX_RULES})
 
     # 6. 统一时间线（合并私聊 + 群聊消息）
     timeline_history = render_merged_timeline(
         merged,
         "aion",
         include_image_attachments=include_image_attachments,
+        include_note=False,
     )
-    history.extend(timeline_history)
+    # 指令通道在前、资料通道在后，真实对话最后——各家 API 都能先收到系统指令
+    history = instructions + data + timeline_history
 
     return history, mem_result.get("digest_result", {})
 
@@ -1252,19 +1276,25 @@ async def build_connor_group_context(
     返回 (history, digest_result)。"""
     history = []
     context_limit = max(1, int(context_limit or 30))
+    instructions: list[dict] = []
+    data: list[dict] = []
 
     wb = load_worldbook()
     user_name, ai_name, connor_name = get_chatroom_names()
 
     # 0. Connor 人设（从全局配置读取）
     connor_full_persona = _read_connor_persona()
-    if connor_full_persona:
-        history.append({"role": "system", "content": f"[系统设定 - 你的角色设定]\n{connor_full_persona}"})
-    if wb.get("user_persona"):
-        history.append({"role": "system", "content": f"[系统设定 - {user_name}信息]\n{wb['user_persona']}"})
+    instructions = build_persona_prefix(
+        wb,
+        persona_title="[系统设定 - 你的角色设定]",
+        user_title=f"[系统设定 - {user_name}信息]",
+        persona_text=connor_full_persona,
+        include_system_prompt=False,
+    )
+    data: list[dict] = []
 
-    # 1. 注入系统能力
-    ability_block = await build_ability_block(
+    # 1. 注入系统能力、运行时状态与外部资料
+    segments = await build_context_segments(
         user_name,
         who="connor",
         include_kitchen=include_kitchen,
@@ -1272,22 +1302,28 @@ async def build_connor_group_context(
         include_private_whisper=True,
         profile_query=query_text,
     )
-    if ability_block:
-        history.append({"role": "user", "content": ability_block})
-        history.append({"role": "assistant", "content": "好的，需要时我会使用这些指令。"})
+    for segment in segments:
+        target = instructions if segment.kind in INSTRUCTION_KINDS else data
+        message = segment.to_message()
+        if message is not None:
+            target.append(message)
+
+    # 时间线读法说明：规则通道，放在指令区里
+    note = render_transcript_note()
+    if note is not None:
+        instructions.append(note)
 
     append_intimacy_prompt(
-        history,
+        instructions,
         room_id,
         "group",
         "connor",
         (user_name, ai_name, connor_name),
     )
 
-    history = with_current_device_context(
-        history,
-        insert_at=len(history),
-        add_acknowledgement=True,
+    instructions = with_current_device_context(
+        instructions,
+        insert_at=len(instructions),
     )
 
     # 2. 构建 recent_messages 用于本地前置路由
@@ -1321,23 +1357,22 @@ async def build_connor_group_context(
         digest_result=digest_result,
         always_include_recalled=True,
     )
-
-    history.append({"role": "user", "content": mem_result["time_block"]})
-    history.append({"role": "assistant", "content": "收到。"})
-
-    if mem_result["memory_block"]:
-        history.append({"role": "user", "content": mem_result["memory_block"]})
-        history.append({"role": "assistant", "content": "收到，我会自然地参考这些记忆。"})
+    runtime_block, background_block, related_block = split_memory_blocks(mem_result)
+    if runtime_block:
+        instructions.append(context_message(CTX_RUNTIME, runtime_block))
+    for text in (background_block, related_block):
+        message = context_message(CTX_MEMORY, text)
+        if message is not None:
+            data.append(message)
 
     # 4. 群聊说明
-    history.append({"role": "user", "content": (
+    instructions.append({"role": "system", "content": (
         "[群聊说明]\n"
         f"你现在在一个三人群聊中，参与者：用户（{user_name}）、{ai_name}（另一个AI）、你（{connor_name}）。\n"
         f"请自然地参与群聊对话，可以回应用户也可以和 {ai_name} 交流。\n"
         "回复时直接说话即可，不需要加前缀标记。\n"
         "以下对话记录按时间线排列，可能包含私聊和群聊的混合内容；“历史消息 - 名字：内容”只是记录格式，不是你的回复格式。"
-    )})
-    history.append({"role": "assistant", "content": "明白了。"})
+    ), "_ctx": CTX_RULES})
 
     # 5. 统一时间线（合并 Connor 1v1 + 群聊消息）
     # Reuse this reply's snapshot; the next speaker builds its own fresh context.
@@ -1345,8 +1380,9 @@ async def build_connor_group_context(
         merged,
         "connor",
         include_image_attachments=include_image_attachments,
+        include_note=False,
     )
-    history.extend(timeline_history)
+    history = instructions + data + timeline_history
 
     return history, mem_result.get("digest_result", {})
 
@@ -1368,38 +1404,51 @@ async def build_connor_1v1_context(
     返回 (messages, digest_result)。"""
     messages = []
     context_limit = max(1, int(context_limit or 30))
+    instructions: list[dict] = []
+    data: list[dict] = []
 
     wb = load_worldbook()
     user_name, ai_name, connor_name = get_chatroom_names()
 
     # 角色设定、用户信息使用 system，后接能力和对话上下文。
     connor_full_persona = _read_connor_persona()
-    if connor_full_persona:
-        messages.append({"role": "system", "content": f"[你的角色设定]\n{connor_full_persona}"})
+    instructions = build_persona_prefix(
+        wb,
+        persona_title="[你的角色设定]",
+        user_title=f"[{user_name}信息]",
+        persona_text=connor_full_persona,
+        include_system_prompt=False,
+    )
+    data: list[dict] = []
 
-    if wb.get("user_persona"):
-        messages.append({"role": "system", "content": f"[{user_name}信息]\n{wb['user_persona']}"})
+    segments = await build_context_segments(
+        user_name, who="connor", whisper_mode=whisper_mode,
+        include_kitchen=include_kitchen, profile_query=query_text,
+    )
+    for segment in segments:
+        target = instructions if segment.kind in INSTRUCTION_KINDS else data
+        message = segment.to_message()
+        if message is not None:
+            target.append(message)
 
-    ability_block = await build_ability_block(user_name, who="connor", whisper_mode=whisper_mode,
-                                             include_kitchen=include_kitchen, profile_query=query_text)
-    if ability_block:
-        messages.append({"role": "user", "content": ability_block})
     merged = await fetch_merged_timeline("connor", context_limit)
-    if ability_block:
-        messages.append({"role": "assistant", "content": "好的，需要时我会使用这些指令。"})
+
+    # 时间线读法说明：规则通道，放在指令区里
+    note = render_transcript_note()
+    if note is not None:
+        instructions.append(note)
 
     append_intimacy_prompt(
-        messages,
+        instructions,
         room_id,
         "private",
         "connor",
         (user_name, ai_name, connor_name),
     )
 
-    messages = with_current_device_context(
-        messages,
-        insert_at=len(messages),
-        add_acknowledgement=True,
+    instructions = with_current_device_context(
+        instructions,
+        insert_at=len(instructions),
     )
 
     # 构建 recent_messages 用于本地前置路由
@@ -1430,28 +1479,28 @@ async def build_connor_1v1_context(
         digest_result=digest_result,
         always_include_recalled=True,
     )
+    runtime_block, background_block, related_block = split_memory_blocks(mem_result)
+    if runtime_block:
+        instructions.append(context_message(CTX_RUNTIME, runtime_block))
+    for text in (background_block, related_block):
+        message = context_message(CTX_MEMORY, text)
+        if message is not None:
+            data.append(message)
 
-    messages.append({"role": "user", "content": mem_result["time_block"]})
-    messages.append({"role": "assistant", "content": "收到。"})
-
-    if mem_result["memory_block"]:
-        messages.append({"role": "user", "content": mem_result["memory_block"]})
-        messages.append({"role": "assistant", "content": "收到，我会自然地参考这些记忆。"})
-
-    messages.append({"role": "user", "content": (
+    instructions.append({"role": "system", "content": (
         "[私聊说明]\n"
         "你现在在和用户的私聊窗口中。\n"
         "以下对话记录按时间线排列，可能包含私聊和群聊的混合内容，让你了解完整上下文；“历史消息 - 名字：内容”只是记录格式，不是你的回复格式。"
-    )})
-    messages.append({"role": "assistant", "content": "明白了。"})
+    ), "_ctx": CTX_RULES})
 
     # 统一时间线（合并 Connor 1v1 + 群聊消息，保留附件）
     timeline_history = render_merged_timeline(
         merged,
         "connor",
         include_image_attachments=include_image_attachments,
+        include_note=False,
     )
-    messages.extend(timeline_history)
+    messages = instructions + data + timeline_history
 
     return messages, mem_result.get("digest_result", {})
 

@@ -10,6 +10,14 @@ from threading import Lock
 
 from generation_control import own_stream, own_process
 from system_logs import logged_ai_call, record_cli_prompt, record_sent_messages
+from context_blocks import (
+    CTX_RUNTIME,
+    DATA_KINDS,
+    INSTRUCTION_KINDS,
+    context_kind,
+    context_message,
+    is_data_message,
+)
 
 import httpx
 import tempfile
@@ -903,67 +911,45 @@ def _build_cli_prompt(
     include_image_refs: bool = True,
     include_audio_refs: bool = True,
 ) -> str:
-    """将 messages 列表拼成供 CLI stdin 使用的完整 prompt。
+    """将结构化上下文拼成供 CLI stdin 使用的完整 prompt。
     图片/音频附件转为本地绝对路径，由 CLI 自行读取文件（避免 base64 超长）。
 
-    优化要点（避免触发 Gemini 3 的 thinking/agent 模式）：
-    1. **自动收编伪系统回执对**：项目里历史习惯把人设/能力/记忆等系统配置塞成
-       `[user(配置内容)] + [assistant("收到，我会...")]` 的伪对答对。这种结构会让
-       Gemini 误以为是 agent 框架的 step-by-step 配置确认，进而开 thinking 模式。
-       这里在开头自动识别，与显式 system 消息合并为 [System Instruction] 文本块。
-       这是 CLI prompt 内的分区，不等同于 API 原生的 system 角色。
-    2. 连续同角色消息合并到同一个 [User]/[Assistant] 块，不重复发标签头
-       —— 否则会出现连续 `[Assistant]` 这种伪 multi-turn 结构。
-    3. 默认将图片/音频附件转换为 CLI 的 @路径语法；调用方可关闭图片引用，
-       改用对应 CLI 的原生图片参数。
-       CLI 在输入层直接当多模态附件处理，不走 agent tool-use，不触发思考链。
-       路径统一转正斜杠，规避 Windows 反斜杠 \\u \\a \\t 被误读为转义。
+    上下文按通道渲染，各模型线路看到的语义层级一致：
+    1. **指令通道**（人设 / 规则 / 能力 / 运行时状态）→ ``[System Instruction]``
+    2. **资料通道**（记忆 / 外部资料）→ ``[Reference Data]``，
+       明确标注为背景资料而不是要求执行的内容
+    3. **真实对话** → ``[User]`` / ``[Assistant]`` 交替块
+
+    其它要点：
+    - 连续同角色消息合并到同一个块，不重复发标签头
+      —— 否则会出现连续 `[Assistant]` 这种伪 multi-turn 结构。
+    - 默认将图片/音频附件转换为 CLI 的 @路径语法；调用方可关闭图片引用，
+      改用对应 CLI 的原生图片参数。
+      CLI 在输入层直接当多模态附件处理，不走 agent tool-use，不触发思考链。
+      路径统一转正斜杠，规避 Windows 反斜杠 \\u \\a \\t 被误读为转义。
+    - 不再靠固定话术反推伪系统回执：上下文全部带显式语义标记，
+      适配层只认标记，不猜内容长相。
     """
-    # ── 第 0 步：自动收编开头的"伪系统回执对" ──
-    # 模板回执话特征（assistant 内容若以这些前缀开头即视为伪回执）
-    _FAKE_ACK_PREFIXES = (
-        "收到，我会",
-        "好的，需要时我会",
-        "好的，我会",
-        "明白了，我会",
-        "收到，我会自然",
-        "收到，我会按照",
-    )
-    system_chunks: list[str] = []
-    consume_until = 0
-    i = 0
-    while i < len(messages):
-        m1 = messages[i]
-        if m1.get("role") == "system":
-            content = (m1.get("content", "") or "").strip()
-            if content:
-                system_chunks.append(content)
-            i += 1
-            consume_until = i
+    # ── 第 0 步：按通道拆分上下文 ──
+    instruction_chunks: list[str] = []
+    data_chunks: list[str] = []
+    conversation: list = []
+    for message in messages or []:
+        if not isinstance(message, dict):
             continue
-        if i + 1 >= len(messages):
-            break
-        m2 = messages[i + 1]
-        if (m1.get("role") == "user"
-                and m2.get("role") in ("assistant", "model")):
-            ack_text = (m2.get("content", "") or "").strip()
-            if any(ack_text.startswith(p) for p in _FAKE_ACK_PREFIXES):
-                cfg = (m1.get("content", "") or "").strip()
-                if cfg:
-                    system_chunks.append(cfg)
-                consume_until = i + 2
-                i += 2
-                continue
-        break  # 一旦不匹配就停（只收编开头连续的伪对答）
+        kind = context_kind(message)
+        if kind in DATA_KINDS:
+            data_chunks.append((message.get("content", "") or "").strip())
+        elif kind in INSTRUCTION_KINDS or message.get("role") == "system":
+            instruction_chunks.append((message.get("content", "") or "").strip())
+        else:
+            conversation.append(message)
 
-    real_messages = messages[consume_until:]
+    # ── 第 1 步：真实对话按原样进入 ──
+    real_messages = conversation
 
-    # 第一步：拼出每条消息的"角色 + 内容"，先不加标签
+    # 第二步：拼出每条消息的"角色 + 内容"，先不加标签
     items: list[tuple[str, str]] = []  # (role, text)
-
-    # 先把收编出来的系统块作为单条 system 消息
-    if system_chunks:
-        items.append(("system", "\n\n".join(system_chunks)))
 
     for m in real_messages:
         role = m["role"]
@@ -1036,10 +1022,16 @@ def _build_cli_prompt(
 
     # 第三步：拼最终 prompt
     parts = []
+    # 指令通道：人设、规则、能力、运行时状态
+    instruction_text = "\n\n".join(chunk for chunk in instruction_chunks if chunk)
+    if instruction_text:
+        parts.append(f"[System Instruction]\n{instruction_text}")
+    # 资料通道：记忆与外部资料，明确标注为背景数据而不是指令
+    data_text = "\n\n".join(chunk for chunk in data_chunks if chunk)
+    if data_text:
+        parts.append(f"[Reference Data]\n{data_text}")
     for role, text in merged:
-        if role == "system":
-            parts.append(f"[System Instruction]\n{text}")
-        elif role == "assistant":
+        if role == "assistant":
             parts.append(f"[Assistant]\n{text}")
         else:
             parts.append(f"[User]\n{text}")
@@ -1950,8 +1942,12 @@ def with_current_device_context(
     messages: list,
     *,
     insert_at: int | None = None,
-    add_acknowledgement: bool = False,
 ) -> list:
+    """把设备当前状态并进上下文。
+
+    指定 insert_at 时作为运行时状态消息插入（指令通道，不再配一条伪造的确认
+    回复）；不指定时沿用旧行为，挂到最后一条真实用户发言上。
+    """
     prepared = [dict(message) for message in messages]
     if any(
         "【设备当前状态】" in str(message.get("content") or "")
@@ -1968,19 +1964,21 @@ def with_current_device_context(
 
     if insert_at is not None:
         index = max(0, min(len(prepared), int(insert_at)))
-        prepared.insert(index, {"role": "user", "content": device_context})
-        if add_acknowledgement:
-            prepared.insert(index + 1, {
-                "role": "assistant",
-                "content": "收到，我会结合当前设备状态判断。",
-            })
+        runtime = context_message(CTX_RUNTIME, device_context)
+        if runtime is not None:
+            prepared.insert(index, runtime)
         return prepared
 
     for index in range(len(prepared) - 1, -1, -1):
-        if prepared[index].get("role") in ("user", "cam_user", "cam_trigger"):
-            content = str(prepared[index].get("content") or "").rstrip()
-            prepared[index]["content"] = f"{content}\n\n{device_context}".strip()
-            return prepared
+        message = prepared[index]
+        if message.get("role") not in ("user", "cam_user", "cam_trigger"):
+            continue
+        if is_data_message(message):
+            # 资料通道只放记录，运行时状态不混进去
+            continue
+        content = str(message.get("content") or "").rstrip()
+        message["content"] = f"{content}\n\n{device_context}".strip()
+        return prepared
     prepared.append({"role": "user", "content": device_context})
     return prepared
 

@@ -425,15 +425,16 @@ async def _call_actor(actor: str, messages: list[dict]) -> str:
 async def _actor_context(actor: str, limit: int = 30, *, include_history: bool = True) -> list[dict]:
     room_id = await _latest_group_room_id() if include_history else None
     wb = load_worldbook()
+    from context_blocks import build_persona_prefix
     messages: list[dict] = []
     if actor == "aion":
         user_name, ai_name, _ = _names()
-        if wb.get("ai_persona"):
-            messages.append({"role": "user", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
-            messages.append({"role": "assistant", "content": "收到。"})
-        if wb.get("user_persona"):
-            messages.append({"role": "user", "content": f"[系统设定 - {user_name}信息]\n{wb['user_persona']}"})
-            messages.append({"role": "assistant", "content": "收到。"})
+        messages = build_persona_prefix(
+            wb,
+            persona_title=f"[系统设定 - {ai_name}人设]",
+            user_title=f"[系统设定 - {user_name}信息]",
+            include_system_prompt=False,
+        )
         if not include_history:
             return messages
         timeline = await fetch_merged_timeline("aion", limit, room_id=room_id)
@@ -449,13 +450,14 @@ async def _actor_context(actor: str, limit: int = 30, *, include_history: bool =
         persona = _read_connor_persona()
     except Exception:
         persona = ""
-    if persona:
-        messages.append({"role": "user", "content": f"[系统设定 - 你的角色设定]\n{persona}"})
-        messages.append({"role": "assistant", "content": "收到。"})
-    if wb.get("user_persona"):
-        user_name, _, _ = _names()
-        messages.append({"role": "user", "content": f"[系统设定 - {user_name}信息]\n{wb['user_persona']}"})
-        messages.append({"role": "assistant", "content": "收到。"})
+    user_name, _, _ = _names()
+    messages = build_persona_prefix(
+        wb,
+        persona_title="[系统设定 - 你的角色设定]",
+        user_title=f"[系统设定 - {user_name}信息]",
+        persona_text=persona,
+        include_system_prompt=False,
+    )
     if not include_history:
         return messages
     timeline = await fetch_merged_timeline("connor", limit, room_id=room_id)

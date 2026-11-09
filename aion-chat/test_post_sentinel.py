@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import aiosqlite
+from context_blocks import segments_text
 
 
 class PostSentinelTests(unittest.IsolatedAsyncioTestCase):
@@ -323,9 +324,9 @@ class PostSentinelTests(unittest.IsolatedAsyncioTestCase):
         ), patch.object(context_builder, 'get_device_context_for_prompt', return_value=''), patch.object(
             context_builder, 'build_cli_file_storage_text', return_value=''
         ):
-            self.assertIn('手写偏好', await context_builder.build_ability_block('用户'))
+            self.assertIn('手写偏好', segments_text(await context_builder.build_context_segments('用户')))
             with patch.object(self.service, 'enabled', return_value=False):
-                self.assertNotIn('手写偏好', await context_builder.build_ability_block('用户'))
+                self.assertNotIn('手写偏好', segments_text(await context_builder.build_context_segments('用户')))
 
     async def test_real_sentinel_adapter_uses_config_and_parses_output(self):
         import memory

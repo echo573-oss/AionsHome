@@ -5,6 +5,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+from context_blocks import CTX_RULES, CTX_RUNTIME
+
 
 ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
@@ -117,47 +119,44 @@ class PrivateIntimacyInjectionTests(unittest.TestCase):
     def test_private_context_injects_nothing_when_play_prompt_is_empty(self):
         from routes import chat as chat_routes
 
-        history = [{"role": "user", "content": "hello"}]
         with (
-            patch.object(chat_routes, "build_ability_block", new=AsyncMock(return_value="")),
+            patch.object(chat_routes, "build_context_segments", new=AsyncMock(return_value=[])),
             patch.object(chat_routes, "build_play_prompt", return_value=""),
-            patch.object(chat_routes, "with_current_device_context", side_effect=lambda items, **_: items),
+            patch.object(chat_routes, "build_health_summary", new=AsyncMock(return_value="")),
         ):
-            result = asyncio.run(chat_routes._insert_private_ability_block(
-                history,
-                0,
-                0,
+            result = asyncio.run(chat_routes._build_private_context_messages(
                 user_name="Ithil",
                 ai_name="Aion",
                 model_key="unit-model",
                 conv_id="conv-1",
             ))
 
-        self.assertEqual(result, 0)
-        self.assertEqual(history, [{"role": "user", "content": "hello"}])
+        # 玩法提示为空时只剩时间线说明与运行时状态（当前时间），没有伪造的确认回复
+        self.assertEqual([message["_ctx"] for message in result], [CTX_RULES, CTX_RUNTIME])
+        self.assertFalse(any(message.get("role") == "assistant" for message in result))
 
-    def test_private_context_adds_active_play_prompt_as_a_message_pair(self):
+    def test_private_context_adds_active_play_prompt_as_a_rule_message(self):
         from routes import chat as chat_routes
 
-        history = [{"role": "user", "content": "hello"}]
         with (
-            patch.object(chat_routes, "build_ability_block", new=AsyncMock(return_value="")),
+            patch.object(chat_routes, "build_context_segments", new=AsyncMock(return_value=[])),
             patch.object(chat_routes, "build_play_prompt", return_value="hidden-card"),
-            patch.object(chat_routes, "with_current_device_context", side_effect=lambda items, **_: items),
+            patch.object(chat_routes, "build_health_summary", new=AsyncMock(return_value="")),
         ):
-            result = asyncio.run(chat_routes._insert_private_ability_block(
-                history,
-                0,
-                0,
+            result = asyncio.run(chat_routes._build_private_context_messages(
                 user_name="Ithil",
                 ai_name="Aion",
                 model_key="unit-model",
                 conv_id="conv-1",
             ))
 
-        self.assertEqual(result, 2)
-        self.assertEqual(history[0], {"role": "user", "content": "hidden-card"})
-        self.assertEqual(history[1]["role"], "assistant")
+        kinds = [message["_ctx"] for message in result]
+        self.assertIn(CTX_RULES, kinds)
+        rules = next(message for message in result if message["_ctx"] == CTX_RULES)
+        self.assertIn("hidden-card", rules["content"])
+        self.assertEqual(rules["role"], "system")
+        # 玩法提示不再配一条 assistant 确认回复
+        self.assertFalse(any(message.get("role") == "assistant" for message in result))
 
 
 class ChatroomIntimacyInjectionTests(unittest.TestCase):
@@ -197,11 +196,12 @@ class ChatroomIntimacyInjectionTests(unittest.TestCase):
         chatroom.append_intimacy_prompt(
             active_history, "room-1", "group", "aion", names
         )
-        self.assertEqual(len(active_history), 2)
+        self.assertEqual(len(active_history), 1)
         self.assertIn("Ithil", active_history[0]["content"])
         self.assertIn("Aion", active_history[0]["content"])
         self.assertIn("Connor", active_history[0]["content"])
-        self.assertEqual(active_history[1]["role"], "assistant")
+        self.assertEqual(active_history[0]["role"], "system")
+        self.assertEqual(active_history[0]["_ctx"], CTX_RULES)
 
 
 if __name__ == "__main__":

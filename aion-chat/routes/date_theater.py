@@ -505,19 +505,18 @@ async def send_message(session_id: str, body: DateSendRequest):
                 fresh_session = await _load_session(db, session_id) or session
                 messages = await _load_messages(db, session_id, limit=60)
 
-            history = [
-                {
-                    "role": "user",
-                    "content": build_reply_prompt(
-                        session=fresh_session,
-                        partner_name=fresh_session.get("partner_name") or cfg.get("partner_name") or "AI",
-                        user_name=user_name,
-                        persona=fresh_session.get("persona") or cfg.get("persona") or "",
-                        assets=assets,
-                    ),
-                },
-                {"role": "assistant", "content": "收到，我只延续这场独立约会。"},
-            ]
+            from context_blocks import CTX_RULES, context_message
+            reply_prompt = context_message(
+                CTX_RULES,
+                build_reply_prompt(
+                    session=fresh_session,
+                    partner_name=fresh_session.get("partner_name") or cfg.get("partner_name") or "AI",
+                    user_name=user_name,
+                    persona=fresh_session.get("persona") or cfg.get("persona") or "",
+                    assets=assets,
+                ),
+            )
+            history = [reply_prompt] if reply_prompt is not None else []
             history.extend({"role": m["role"], "content": m["content"]} for m in messages if m.get("role") in {"user", "assistant"})
             usage_meta: dict = {}
 

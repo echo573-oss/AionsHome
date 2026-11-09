@@ -11,6 +11,7 @@ if str(ROOT) not in sys.path:
 
 import chatroom
 import context_builder
+from context_blocks import CTX_ABILITY, ContextSegment
 from routes import chat as chat_routes
 
 
@@ -172,7 +173,7 @@ class ActiveMemoryRecallTests(unittest.IsolatedAsyncioTestCase):
             patch("chatroom.fetch_merged_timeline", new=AsyncMock(return_value=merged)),
             patch("chatroom.load_worldbook", return_value={}),
             patch("chatroom.get_chatroom_names", return_value=("User", "MainAI", "Companion")),
-            patch("chatroom.build_ability_block", new=AsyncMock(return_value="")),
+            patch("chatroom.build_context_segments", new=AsyncMock(return_value=[])),
             patch("chatroom.recall_chatroom_memories", new=forbidden_chatroom_recall),
             patch("context_builder.build_health_summary", new=_empty_health),
             patch("context_builder.build_surfacing_memories", new=AsyncMock(return_value=([], set()))),
@@ -230,7 +231,9 @@ class ActiveMemoryRecallTests(unittest.IsolatedAsyncioTestCase):
             patch("chatroom.fetch_merged_timeline", new=AsyncMock(return_value=merged)),
             patch("chatroom.load_worldbook", return_value={}),
             patch("chatroom.get_chatroom_names", return_value=("User", "MainAI", "Companion")),
-            patch("chatroom.build_ability_block", new=AsyncMock(return_value="[系统能力]\n能力说明")),
+            patch("chatroom.build_context_segments", new=AsyncMock(return_value=[
+                ContextSegment(CTX_ABILITY, "[系统能力]\n能力说明"),
+            ])),
             patch("chatroom.build_memory_blocks", new=AsyncMock(return_value=memory_result)),
             patch(
                 "activity.get_device_context_for_prompt",
@@ -355,7 +358,7 @@ class ActiveMemoryRecallTests(unittest.IsolatedAsyncioTestCase):
             ])),
             patch("routes.chat.render_merged_timeline", return_value=list(rendered_history)),
             patch("routes.chat.load_worldbook", return_value={}),
-            patch("routes.chat._insert_private_ability_block", new=AsyncMock(return_value=0)),
+            patch("routes.chat._build_private_context_messages", new=AsyncMock(return_value=[])),
             patch(
                 "routes.chat.instant_digest",
                 new=AsyncMock(

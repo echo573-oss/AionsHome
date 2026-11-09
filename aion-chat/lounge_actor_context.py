@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from context_builder import build_memory_blocks
+from context_builder import build_memory_blocks, split_memory_blocks
 
 
 _PRIVATE_TOKEN_RE = re.compile(
@@ -88,51 +88,25 @@ async def build_lounge_actor_context(
     ]
     base_context = list(await _base_actor_context(actor_id, limit))
     context: list[dict] = []
-    persona_pair_open = False
     for item in base_context:
         content = str(item.get("content") or "")
         is_persona = content.startswith("[系统设定 -")
-        if is_persona:
-            persona_pair_open = True
-        kind = "persona" if is_persona or persona_pair_open else "home_chat"
-        context.append({**item, "lounge_context_kind": kind})
-        if persona_pair_open and item.get("role") == "assistant":
-            persona_pair_open = False
+        context.append({**item, "lounge_context_kind": "persona" if is_persona else "home_chat"})
+
     memory = await _actor_memory_blocks(actor_id, safe_query, safe_visit[-3:])
-    if memory.get("time_block"):
-        context.extend([
-            {
-                "role": "user",
-                "content": memory["time_block"],
-                "lounge_context_kind": "dynamic_state",
-            },
-            {
-                "role": "assistant",
-                "content": "收到。",
-                "lounge_context_kind": "dynamic_state",
-            },
-        ])
-    if memory.get("memory_block"):
-        context.extend([
-            {
-                "role": "user",
-                "content": memory["memory_block"],
-                "lounge_context_kind": "memory_summary",
-            },
-            {
-                "role": "assistant",
-                "content": "收到，我会自然参考相关记忆。",
-                "lounge_context_kind": "memory_summary",
-            },
-        ])
-    context.append({
-        "role": "user",
-        "content": _PRIVACY_RULE,
-        "lounge_context_kind": "safety",
-    })
-    context.append({
-        "role": "assistant",
-        "content": "明白。",
-        "lounge_context_kind": "safety",
-    })
+    from context_blocks import CTX_MEMORY, CTX_RULES, context_message
+    runtime_block, background_block, related_block = split_memory_blocks(memory)
+    for text, label in (
+        (runtime_block, "dynamic_state"),
+        (background_block, "dynamic_state"),
+        (related_block, "memory_summary"),
+    ):
+        message = context_message(CTX_MEMORY, text)
+        if message is not None:
+            context.append({**message, "lounge_context_kind": label})
+
+    # 隐私提醒是规则，但必须留在最后——这里的顺序就是访客会客厅的淘汰优先级。
+    privacy = context_message(CTX_RULES, _PRIVACY_RULE, role="user")
+    if privacy is not None:
+        context.append({**privacy, "lounge_context_kind": "safety"})
     return context

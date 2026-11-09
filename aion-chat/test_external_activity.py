@@ -4,6 +4,7 @@ import time
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
+from context_blocks import segments_text as cb_segments_text
 
 
 class ExternalActivityTests(unittest.IsolatedAsyncioTestCase):
@@ -89,12 +90,12 @@ class ExternalActivityTests(unittest.IsolatedAsyncioTestCase):
         app.include_router(router)
         with TestClient(app) as client, patch.object(cb,'build_capability_prompt_items',new=AsyncMock(return_value=[])), patch.object(cb,'is_capability_enabled',return_value=False), patch.object(cb,'get_device_context_for_prompt',return_value=''), patch.object(cb,'build_cli_file_storage_text',return_value=''), patch('external_memories.recent_context',new=AsyncMock(return_value='')):
             self.assertTrue(client.get('/api/qq-social/activity').json()['enabled'])
-            body=await cb.build_ability_block('用户',who='aion',excluded_capabilities={'post_sentinel'})
+            body=cb_segments_text(await cb.build_context_segments('用户',who='aion',excluded_capabilities={'post_sentinel'}))
             self.assertIn('兔子',body)
             self.assertEqual(client.patch('/api/qq-social/activity',json={'enabled':'no'}).status_code,400)
             self.assertEqual(client.patch('/api/qq-social/activity',json={'enabled':False},headers={'origin':'https://foreign.invalid'}).status_code,403)
             self.assertEqual(client.patch('/api/qq-social/activity',json={'enabled':False}).status_code,200)
-            body=await cb.build_ability_block('用户',who='aion',excluded_capabilities={'post_sentinel'})
+            body=cb_segments_text(await cb.build_context_segments('用户',who='aion',excluded_capabilities={'post_sentinel'}))
             self.assertNotIn('兔子',body)
 
     async def test_unavailable_cache_does_not_block_context(self):

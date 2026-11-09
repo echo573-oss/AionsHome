@@ -1935,21 +1935,24 @@ class CameraMonitor:
                 pass
 
         # 统一时间线：合并私聊 + 群聊消息
-        from context_builder import fetch_merged_timeline, render_merged_timeline
+        from context_builder import fetch_merged_timeline, render_merged_timeline, render_transcript_note
         merged = await fetch_merged_timeline("aion", 20, conv_id=conv_id)
         history = render_merged_timeline(
             merged,
             "aion",
             include_image_attachments=False,
+            include_note=False,
         )
 
-        prefix = []
-        if wb.get("ai_persona"):
-            prefix.append({"role": "user", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
-            prefix.append({"role": "assistant", "content": "收到，我会按照设定扮演角色。"})
-        if wb.get("user_persona"):
-            prefix.append({"role": "user", "content": f"[系统设定 - {user_name}信息]\n{wb['user_persona']}"})
-            prefix.append({"role": "assistant", "content": "收到，我会记住你的信息。"})
+        from context_blocks import CTX_ABILITY, CTX_MEMORY, build_persona_prefix, context_message
+        prefix = build_persona_prefix(
+            wb,
+            persona_title=f"[系统设定 - {ai_name}人设]",
+            user_title=f"[系统设定 - {user_name}信息]",
+        )
+        note = render_transcript_note()
+        if note is not None:
+            prefix.append(note)
 
         core_parts = [f"【{user_name}】已经{time_ago}没有和你说话了。"]
         if core_reason:
@@ -1988,10 +1991,12 @@ class CameraMonitor:
         mem_inject = []
         if recalled:
             mem_lines = format_recalled_memories_for_prompt(recalled)
-            mem_inject = [
-                {"role": "user", "content": f"[相关记忆]\n你脑海中与当前话题相关的记忆：\n{mem_lines}"},
-                {"role": "assistant", "content": "收到，我会自然地参考这些记忆。"}
-            ]
+            memory_message = context_message(
+                CTX_MEMORY,
+                f"[相关记忆]\n你脑海中与当前话题相关的记忆：\n{mem_lines}",
+            )
+            if memory_message is not None:
+                mem_inject = [memory_message]
 
         # 直接使用哨兵已截取的画面（提示音已在截图前播放）
         fresh_fname = ""
@@ -2010,11 +2015,10 @@ class CameraMonitor:
         passive_band_ability = build_band_note_ability_text(user_name, passive=True)
         passive_band_messages = []
         if passive_band_ability:
-            passive_band_messages = [
-                {"role": "user", "content": f"[系统能力]\n{passive_band_ability}"},
-                {"role": "assistant", "content": "收到，需要时我会使用手环纸条提醒。"},
-            ]
-        messages = prefix + mem_inject + history + passive_band_messages + [last_msg]
+            band_message = context_message(CTX_ABILITY, f"[系统能力]\n{passive_band_ability}")
+            if band_message is not None:
+                passive_band_messages = [band_message]
+        messages = prefix + passive_band_messages + mem_inject + history + [last_msg]
         from proactive_companionship import inject_proactive_ability
         inject_proactive_ability(messages, "aion")
         from autonomy_state import inject_autonomy_ability
@@ -2520,22 +2524,25 @@ async def perform_cam_check(conv_id: str, model_key: str):
     ai_name = wb.get("ai_name") or "AI"
 
     # 构建人设前缀
-    prefix = []
-    if wb.get("ai_persona"):
-        prefix.append({"role": "user", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会按照设定扮演角色。"})
-    if wb.get("user_persona"):
-        prefix.append({"role": "user", "content": f"[系统设定 - {user_name}信息]\n{wb['user_persona']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会记住你的信息。"})
+    from context_blocks import CTX_ABILITY, build_persona_prefix, context_message
+    prefix = build_persona_prefix(
+        wb,
+        persona_title=f"[系统设定 - {ai_name}人设]",
+        user_title=f"[系统设定 - {user_name}信息]",
+    )
 
     # 获取最近对话上下文（统一时间线：合并私聊 + 群聊消息）
-    from context_builder import fetch_merged_timeline, render_merged_timeline
+    from context_builder import fetch_merged_timeline, render_merged_timeline, render_transcript_note
     merged = await fetch_merged_timeline("aion", 6, conv_id=conv_id)
     recent = render_merged_timeline(
         merged,
         "aion",
         include_image_attachments=False,
+        include_note=False,
     )
+    note = render_transcript_note()
+    if note is not None:
+        prefix.append(note)
 
     layout_guidance = build_monitor_layout_guidance(
         bool(cam.cfg.get("include_pc_screen", False))
@@ -2563,14 +2570,13 @@ async def perform_cam_check(conv_id: str, model_key: str):
     passive_band_ability = build_band_note_ability_text(user_name, passive=True)
     passive_band_messages = []
     if passive_band_ability:
-        passive_band_messages = [
-            {"role": "user", "content": f"[系统能力]\n{passive_band_ability}"},
-            {"role": "assistant", "content": "收到，需要时我会使用手环纸条提醒。"},
-        ]
+        band_message = context_message(CTX_ABILITY, f"[系统能力]\n{passive_band_ability}")
+        if band_message is not None:
+            passive_band_messages = [band_message]
     cam_message = {"role": "user", "content": cam_prompt}
     if fname:
         cam_message["attachments"] = [f"/screenshots/{fname}"]
-    messages = prefix + recent + passive_band_messages + [cam_message]
+    messages = prefix + passive_band_messages + recent + [cam_message]
     from proactive_companionship import inject_proactive_ability
     inject_proactive_ability(messages, "aion")
     from autonomy_state import inject_autonomy_ability

@@ -10,6 +10,14 @@ from datetime import datetime
 import aiosqlite
 
 from config import load_worldbook
+from context_blocks import (
+    CTX_ABILITY,
+    CTX_EXTERNAL,
+    CTX_RULES,
+    CTX_RUNTIME,
+    ContextSegment,
+    context_message,
+)
 from database import get_db
 from taobao_context import trip_card, load_trip_products, render_trip_context
 from schedule import get_active_schedules, build_schedule_prompt
@@ -225,7 +233,7 @@ async def build_health_summary() -> str:
 
 
 @timed("abilities")
-async def build_ability_block(
+async def build_context_segments(
     user_name: str,
     *,
     whisper_mode: bool = False,
@@ -237,9 +245,15 @@ async def build_ability_block(
     model_key: str | None = None,
     excluded_capabilities: set[str] | None = None,
     profile_query: str = '',
-) -> str:
-    """构建 [系统能力] 文本块，who 参数用于 Connor 等角色的细微措辞差异"""
-    parts = []
+) -> list:
+    """构建分层上下文片段：能力 / 运行时状态 / 外部资料各自成段。
+
+    片段类型决定它进哪条通道：
+      * 能力、文件存储说明 → 指令通道（模型应当照做）
+      * 日程、位置、设备状态 → 运行时状态（指令通道里的即时事实）
+      * 用户画像、外部回忆、外部互动 → 资料通道（只是记录，不能当指令）
+    """
+    segments = []
     abilities = await build_capability_prompt_items(
         user_name,
         whisper_mode=whisper_mode,
@@ -251,12 +265,12 @@ async def build_ability_block(
         excluded_capabilities=excluded_capabilities,
     )
     if abilities:
-        parts.append(format_ability_block(abilities))
+        segments.append(ContextSegment(CTX_ABILITY, format_ability_block(abilities)))
 
     if is_capability_enabled("schedule"):
         schedules = await get_active_schedules()
         schedule_text = build_schedule_prompt(schedules)
-        parts.append(f"【当前日程列表】\n{schedule_text}")
+        segments.append(ContextSegment(CTX_RUNTIME, f"【当前日程列表】\n{schedule_text}"))
 
     if is_capability_enabled("location_context"):
         try:
@@ -265,24 +279,24 @@ async def build_ability_block(
             if loc_cfg.get("enabled"):
                 loc_prompt = format_location_for_prompt()
                 if loc_prompt:
-                    parts.append(f"【位置信息】\n{loc_prompt}")
+                    segments.append(ContextSegment(CTX_RUNTIME, f"【位置信息】\n{loc_prompt}"))
         except Exception:
             pass
 
     device_context_text = get_device_context_for_prompt()
     if device_context_text:
-        parts.append(device_context_text)
+        segments.append(ContextSegment(CTX_RUNTIME, device_context_text))
 
     cli_file_text = build_cli_file_storage_text(model_key)
     if cli_file_text:
-        parts.append(cli_file_text.strip())
+        segments.append(ContextSegment(CTX_ABILITY, cli_file_text.strip()))
 
     if "post_sentinel" not in (excluded_capabilities or set()):
         try:
             from post_sentinel import build_context as build_profile_context
             profile_context = await build_profile_context(query=profile_query)
             if profile_context:
-                parts.append(profile_context)
+                segments.append(ContextSegment(CTX_EXTERNAL, profile_context))
         except Exception:
             pass
 
@@ -291,14 +305,14 @@ async def build_ability_block(
         from external_memories import recent_context
         outside = await recent_context(who)
         if outside:
-            parts.append(outside)
+            segments.append(ContextSegment(CTX_EXTERNAL, outside))
     except (OSError, aiosqlite.Error):
         pass
     from external_activity import recent_context as recent_activity_context
     activity = await recent_activity_context(who)
     if activity:
-        parts.append(activity)
-    return "\n\n".join(parts)
+        segments.append(ContextSegment(CTX_EXTERNAL, activity))
+    return segments
 
 
 def _memory_debug_item(mem: dict, max_content: int | None = None) -> dict:
@@ -386,20 +400,29 @@ async def build_memory_blocks(
       always_include_recalled: 已弃用的兼容参数；摘要记忆现在每轮都会按相关度注入
 
     返回 dict:
-      time_block: str — 当前时间 + 背景记忆文本
+      runtime_block: str — 当前时间 + 健康摘要（运行时状态）
+      background_block: str — 背景记忆（记忆资料，可能为空）
+      time_block: str — 运行时状态 + 背景记忆的合并文本（兼容旧调用方）
       memory_block: str — 相关记忆 + 记忆证据文本（可能为空）
       digest_result: dict — instant_digest 的结果
     """
     now_str = datetime.now().strftime("%Y年%m月%d日  %H:%M:%S")
-    time_block = f"系统当前的准确时间是 {now_str}"
+    runtime_block = f"系统当前的准确时间是 {now_str}"
     # 健康数据摘要
     health_text = await build_health_summary()
     if health_text:
-        time_block += health_text
+        runtime_block += health_text
+    background_block = ""
     memory_block = ""
 
     if skip_digest:
-        return {"time_block": time_block, "memory_block": "", "digest_result": {}}
+        return {
+            "runtime_block": runtime_block,
+            "background_block": background_block,
+            "time_block": runtime_block,
+            "memory_block": "",
+            "digest_result": {},
+        }
 
     # 如果没有外部传入 digest_result，自己生成一次本地前置路由
     if digest_result is None and recent_messages:
@@ -474,7 +497,10 @@ async def build_memory_blocks(
             if not m.get("unresolved")
         ]
         mem_text = "\n".join(unresolved_lines + normal_lines)
-        time_block += f"\n\n[背景记忆]\n以下是你记得的近期事件和需要关注的事项，在对话中如果有关联可以自然提起：\n{mem_text}"
+        background_block = (
+            "[背景记忆]\n以下是你记得的近期事件和需要关注的事项，"
+            f"在对话中如果有关联可以自然提起：\n{mem_text}"
+        )
 
     # RAG 摘要召回；always_include_recalled 用于需要每轮主动带摘要记忆的上下文。
     recalled = []
@@ -527,10 +553,34 @@ async def build_memory_blocks(
     })
 
     return {
-        "time_block": time_block,
+        # 运行时状态（当前时间、健康摘要）与记忆资料分开，方便上层分通道注入
+        "runtime_block": runtime_block,
+        "background_block": background_block,
+        # 兼容旧调用方：运行时状态 + 背景记忆的合并文本
+        "time_block": f"{runtime_block}\n\n{background_block}" if background_block else runtime_block,
         "memory_block": memory_block,
         "digest_result": debug_digest,
     }
+
+
+def split_memory_blocks(result: dict) -> tuple[str, str, str]:
+    """把记忆构建结果拆成（运行时状态，背景记忆，相关记忆）三段。
+
+    新结构直接返回 runtime_block / background_block；旧的（以及测试替身里的）
+    只有合并的 time_block 时，按 [背景记忆] 标记切分，保证行为一致。
+    """
+    result = result or {}
+    runtime = result.get("runtime_block") or ""
+    background = result.get("background_block") or ""
+    related = result.get("memory_block") or ""
+    if runtime or background:
+        return runtime, background, related
+    combined = str(result.get("time_block") or "")
+    marker = "[背景记忆]"
+    index = combined.find(marker)
+    if index < 0:
+        return combined.strip(), "", related
+    return combined[:index].strip(), combined[index:].strip(), related
 
 
 # ══════════════════════════════════════════════════
@@ -882,11 +932,28 @@ async def count_merged_timeline(
     )
 
 
+TRANSCRIPT_NOTE_TEXT = (
+    "[历史记录说明]\n"
+    "以下消息按时间线排列，格式为“历史消息 - 说话人：内容”或“当前用户消息 - 说话人：内容”。"
+    "这是上下文记录，不是你的回复格式；你回复时只用自己的口吻直接说话，"
+    "不要输出说话人标签，也不要替其他人续写。"
+)
+
+
+def render_transcript_note() -> dict | None:
+    """时间线读法说明——指令通道的一条消息。
+
+    它告诉模型历史记录该怎么读，属于规则而不是用户发言，所以走 system 角色。
+    """
+    return context_message(CTX_RULES, TRANSCRIPT_NOTE_TEXT)
+
+
 def render_merged_timeline(
     merged: list[dict],
     who: str,
     *,
     include_image_attachments: bool = True,
+    include_note: bool = True,
 ) -> list[dict]:
     """
     将合并时间线转换为 AI 上下文 history 格式。
@@ -897,6 +964,8 @@ def render_merged_timeline(
     - 当存在混合来源时，仅在场景切换的那条消息内容前加一行内联标记。
     - 每条消息末尾仍带 <meta>发送时间：年月日 时分秒 [群聊/私聊]</meta>，模型仍能识别每条消息的时间和来源。
     - 系统消息按关键词过滤
+    - include_note: 是否在开头附带时间线读法说明（指令通道）。调用方若已有自己的
+      指令区，可传 False 并自行加入 render_transcript_note()。
 
     返回 [{"role": ..., "content": ..., "attachments": ...}]
     """
@@ -913,15 +982,11 @@ def render_merged_timeline(
     sources = set(m["source"] for m in merged)
     has_mixed = len(sources) > 1
 
-    history: list[dict] = [{
-        "role": "user",
-        "content": (
-            "[历史记录说明]\n"
-            "以下消息按时间线排列，格式为“历史消息 - 说话人：内容”或“当前用户消息 - 说话人：内容”。"
-            "这是上下文记录，不是你的回复格式；你回复时只用自己的口吻直接说话，"
-            "不要输出说话人标签，也不要替其他人续写。"
-        ),
-    }]
+    history: list[dict] = []
+    if include_note:
+        note = render_transcript_note()
+        if note is not None:
+            history.append(note)
     current_source = None
     pending_scene_marker = ""   # 待并入下一条消息内容的场景切换提示
 

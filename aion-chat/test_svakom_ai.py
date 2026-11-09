@@ -4,6 +4,7 @@ import capabilities
 import context_builder
 import svakom_ai
 from unittest.mock import AsyncMock
+from context_blocks import segments_text
 
 
 @pytest.fixture
@@ -21,13 +22,13 @@ def test_new_prompt_is_independent_and_in_final_ability_block(isolated):
     async def run():
         capabilities.set_capability_enabled('svakom', True)
         for who in ('aion', 'connor'):
-            block = await context_builder.build_ability_block('测试用户', who=who, whisper_mode=False)
+            block = segments_text(await context_builder.build_context_segments('测试用户', who=who, whisper_mode=False))
             assert '【新玩具独立编排指南】' in block
             assert '[SVAKOM:LOOP:' in block and '[SVAKOM:STOP]' in block
             assert '三短一长' in block and '低速方波脉冲' in block
             assert '[TOY:' not in block
         capabilities.set_capability_enabled('svakom', False)
-        block = await context_builder.build_ability_block('测试用户', whisper_mode=True)
+        block = segments_text(await context_builder.build_context_segments('测试用户', whisper_mode=True))
         assert '[SVAKOM:' not in block
     asyncio.run(run())
 
@@ -42,7 +43,7 @@ def test_reference_strength_uses_latest_controller_report_and_expires(isolated):
     report = dict(source='phone-test', sequence=1, connected=True, flap=4, vibrate=2, vibrate_level=3)
     assert client.post('/api/svakom-ai/state', json=report).status_code == 200
     async def prompt():
-        return await context_builder.build_ability_block('测试用户', whisper_mode=False)
+        return segments_text(await context_builder.build_context_segments('测试用户', whisper_mode=False))
     assert '当前参考强度：6/10' in asyncio.run(prompt())
     client.post('/api/svakom-ai/state', json={**report, 'sequence': 2, 'flap': 0, 'vibrate_level': 9})
     # Older/out-of-order reports cannot overwrite a newer slider value.
@@ -122,7 +123,6 @@ def test_command_notices_persist_but_never_enter_model_history(isolated, tmp_pat
 def test_real_private_and_group_prompt_assembly(isolated):
     from routes import chat
     import chatroom
-    isolated.setattr(chat, 'with_current_device_context', lambda history, **kwargs: history)
     isolated.setattr(chatroom, 'with_current_device_context', lambda history, **kwargs: history)
     isolated.setattr(chatroom, 'load_worldbook', lambda: {})
     isolated.setattr(chatroom, '_read_connor_persona', lambda: '')
@@ -133,7 +133,8 @@ def test_real_private_and_group_prompt_assembly(isolated):
         isolated.setattr(svakom_ai.manager, 'broadcast', AsyncMock(side_effect=sent.append))
         capabilities.set_capability_enabled('svakom', True)
         history = []
-        await chat._insert_private_ability_block(history, 0, 0, user_name='测试用户', ai_name='测试AI', model_key='test', whisper_mode=False)
+        history = await chat._build_private_context_messages(
+            user_name='测试用户', ai_name='测试AI', model_key='test', whisper_mode=False)
         assert '[SVAKOM:LOOP:' in str(history)
         # The response worker inherits the prompt builder's request permission.
         await asyncio.create_task(svakom_ai.process_commands('[SVAKOM:STOP]', 'private'))

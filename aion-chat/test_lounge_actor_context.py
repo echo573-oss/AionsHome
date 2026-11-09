@@ -64,8 +64,7 @@ def test_lounge_context_labels_blocks_by_eviction_priority(monkeypatch):
         "_base_actor_context",
         AsyncMock(
             return_value=[
-                {"role": "user", "content": "[系统设定 - 你的角色设定]\n核心人设"},
-                {"role": "assistant", "content": "收到。"},
+                {"role": "system", "content": "[系统设定 - 你的角色设定]\n核心人设"},
                 {"role": "user", "content": "最近家中聊天"},
             ]
         ),
@@ -80,17 +79,17 @@ def test_lounge_context_labels_blocks_by_eviction_priority(monkeypatch):
         lounge_actor_context.build_lounge_actor_context("connor", "近况", [])
     )
 
+    # 顺序即淘汰优先级：人设 → 家中聊天 → 动态状态 → 摘要记忆 → 隐私提醒
     assert [item["lounge_context_kind"] for item in result] == [
-        "persona",
         "persona",
         "home_chat",
         "dynamic_state",
-        "dynamic_state",
         "memory_summary",
-        "memory_summary",
-        "safety",
         "safety",
     ]
+    # 隐私提醒必须留在最后，不能挪到 system 通道
+    assert result[-1]["role"] == "user"
+    assert result[-1]["_ctx"] == "rules"
 
 
 def test_lounge_context_redacts_key_shaped_text(monkeypatch):

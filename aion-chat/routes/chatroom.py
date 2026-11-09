@@ -16,7 +16,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from config import DEFAULT_MODEL, DATA_DIR, CODEX_UPLOADS_DIR, ALBUM_IMAGES_DIR, MODELS, SETTINGS, get_sentinel_config, resolve_model_key, resolve_model_transport_mode, load_codex_custom_instructions, CODEX_INSTRUCTIONS_HEADER
+from config import DEFAULT_MODEL, DATA_DIR, CODEX_UPLOADS_DIR, ALBUM_IMAGES_DIR, MODELS, SETTINGS, get_sentinel_config, resolve_model_key, resolve_model_transport_mode, load_codex_custom_instructions
 from database import get_db
 from ws import manager
 from system_logs import emit_chat_debug
@@ -45,7 +45,11 @@ from context_builder import (
     PRIVATE_WHISPER_CMD_PATTERN, VIDEO_CALL_CMD, META_TAG_PATTERN, strip_tool_commands,
     WISH_CMD_PATTERN,
     append_message_meta,
-    build_ability_block,
+    build_context_segments,
+)
+from context_blocks import (
+    build_persona_prefix,
+    channel_messages,
 )
 from music_station import record_music_request
 from memory import (
@@ -1490,15 +1494,14 @@ async def _chatroom_cam_check(
     if image_result.no_image_context:
         cam_prompt += image_result.no_image_context
 
-    prefix_msgs = []
-    if sender == "aion":
-        local_inst = load_codex_custom_instructions()
-        if local_inst:
-            prefix_msgs.append({"role": "system", "content": f"{CODEX_INSTRUCTIONS_HEADER}\n{local_inst}"})
-    if wb.get("ai_persona") and sender == "aion":
-        prefix_msgs.append({"role": "system", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
-    if wb.get("user_persona"):
-        prefix_msgs.append({"role": "system", "content": f"[系统设定 - {user_name}信息]\n{wb['user_persona']}"})
+    prefix_msgs = build_persona_prefix(
+        wb,
+        persona_title=f"[系统设定 - {ai_name}人设]",
+        user_title=f"[系统设定 - {user_name}信息]",
+        codex_instructions=load_codex_custom_instructions() if sender == "aion" else "",
+        include_ai_persona=(sender == "aion"),
+        include_system_prompt=False,
+    )
 
     cam_message = {"role": "user", "content": cam_prompt}
     if fname:
@@ -1570,15 +1573,14 @@ async def _chatroom_activity_check(room_id: str, sender: str, model_key: str, n:
     )
 
     # 构建 prompt
-    prefix_msgs = []
-    if sender == "aion":
-        local_inst = load_codex_custom_instructions()
-        if local_inst:
-            prefix_msgs.append({"role": "system", "content": f"{CODEX_INSTRUCTIONS_HEADER}\n{local_inst}"})
-    if wb.get("ai_persona") and sender == "aion":
-        prefix_msgs.append({"role": "system", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
-    if wb.get("user_persona"):
-        prefix_msgs.append({"role": "system", "content": f"[系统设定 - {user_name}信息]\n{wb['user_persona']}"})
+    prefix_msgs = build_persona_prefix(
+        wb,
+        persona_title=f"[系统设定 - {ai_name}人设]",
+        user_title=f"[系统设定 - {user_name}信息]",
+        codex_instructions=load_codex_custom_instructions() if sender == "aion" else "",
+        include_ai_persona=(sender == "aion"),
+        include_system_prompt=False,
+    )
 
     messages = prefix_msgs + recent + [{"role": "user", "content": activity_prompt}]
 
@@ -1694,13 +1696,15 @@ async def _chatroom_poi_check(room_id: str, sender: str, model_key: str, categor
     _, msgs = await _load_room_and_messages(room_id, limit=10)
     recent = _render_recent_room_messages_for_ai(msgs)
 
-    prefix_msgs = []
-    if sender == "aion":
-        local_inst = load_codex_custom_instructions()
-        if local_inst:
-            prefix_msgs.append({"role": "system", "content": f"{CODEX_INSTRUCTIONS_HEADER}\n{local_inst}"})
-    if wb.get("ai_persona") and sender == "aion":
-        prefix_msgs.append({"role": "system", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
+    prefix_msgs = build_persona_prefix(
+        wb,
+        persona_title=f"[系统设定 - {ai_name}人设]",
+        user_title=f"[系统设定 - {user_name}信息]",
+        codex_instructions=load_codex_custom_instructions() if sender == "aion" else "",
+        include_ai_persona=(sender == "aion"),
+        include_user_persona=False,
+        include_system_prompt=False,
+    )
 
     messages = prefix_msgs + recent + [{"role": "user", "content": poi_prompt}]
 
@@ -1767,24 +1771,27 @@ async def _chatroom_web_search(room_id: str, sender: str, model_key: str, payloa
     _, msgs = await _load_room_and_messages(room_id, limit=10)
     recent = _render_recent_room_messages_for_ai(msgs)
 
-    prefix_msgs = []
-    if sender == "aion":
-        local_inst = load_codex_custom_instructions()
-        if local_inst:
-            prefix_msgs.append({"role": "system", "content": f"{CODEX_INSTRUCTIONS_HEADER}\n{local_inst}"})
     if sender == "connor":
         from chatroom import _read_connor_persona
 
         connor_persona = _read_connor_persona()
-        if connor_persona:
-            prefix_msgs.append({
-                "role": "system",
-                "content": connor_persona,
-            })
-    if wb.get("ai_persona") and sender == "aion":
-        prefix_msgs.append({"role": "system", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
-    if wb.get("user_persona"):
-        prefix_msgs.append({"role": "system", "content": f"[系统设定 - {user_name}信息]\n{wb['user_persona']}"})
+        # Connor 人设原文不带标题
+        prefix_msgs = build_persona_prefix(
+            wb,
+            persona_title="",
+            user_title=f"[系统设定 - {user_name}信息]",
+            persona_text=connor_persona,
+            include_ai_persona=False,
+            include_system_prompt=False,
+        )
+    else:
+        prefix_msgs = build_persona_prefix(
+            wb,
+            persona_title=f"[系统设定 - {ai_name}人设]",
+            user_title=f"[系统设定 - {user_name}信息]",
+            codex_instructions=load_codex_custom_instructions(),
+            include_system_prompt=False,
+        )
 
     web_prompt = (
         f"{sender_label}刚才为了回答{user_name}发起了联网搜索或网页读取，系统已经完成。以下是结果：\n\n"
@@ -1859,36 +1866,34 @@ async def _chatroom_memory_search(room_id: str, sender: str, model_key: str, pay
     user_name = wb.get("user_name", "用户")
     ai_name = wb.get("ai_name", "AI")
     sender_label = _name_for_identity(actor)
-    prefix_msgs: list[dict] = []
-    if actor == "aion":
-        local_inst = load_codex_custom_instructions()
-        if local_inst:
-            prefix_msgs.append({"role": "system", "content": f"{CODEX_INSTRUCTIONS_HEADER}\n{local_inst}"})
     if actor == "connor":
         from chatroom import _read_connor_persona
         connor_persona = _read_connor_persona()
-        if connor_persona:
-            prefix_msgs.append({"role": "system", "content": connor_persona})
-    elif wb.get("ai_persona"):
-        prefix_msgs.extend([
-            {"role": "system", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"},
-        ])
-    if wb.get("user_persona"):
-        prefix_msgs.extend([
-            {"role": "system", "content": f"[系统设定 - {user_name}信息]\n{wb['user_persona']}"},
-        ])
-    ability_block = await build_ability_block(
+        # Connor 人设原文不带标题
+        prefix_msgs = build_persona_prefix(
+            wb,
+            persona_title="",
+            user_title=f"[系统设定 - {user_name}信息]",
+            persona_text=connor_persona,
+            include_ai_persona=False,
+            include_system_prompt=False,
+        )
+    else:
+        prefix_msgs = build_persona_prefix(
+            wb,
+            persona_title=f"[系统设定 - {ai_name}人设]",
+            user_title=f"[系统设定 - {user_name}信息]",
+            codex_instructions=load_codex_custom_instructions(),
+            include_system_prompt=False,
+        )
+    ability_segments = await build_context_segments(
         user_name,
         who=actor,
         model_key=model_key,
         excluded_capabilities={"memory_search"},
         profile_query=original_question,
     )
-    if ability_block:
-        prefix_msgs.extend([
-            {"role": "user", "content": ability_block},
-            {"role": "assistant", "content": "好的，需要时我会使用这些指令。"},
-        ])
+    prefix_msgs.extend(channel_messages(ability_segments))
     _, msgs = await _load_room_and_messages(room_id, limit=10)
     recent = _render_recent_room_messages_for_ai(msgs)
     memory_prompt = (

@@ -270,29 +270,29 @@ def _build_moment_reply_messages(
 
     messages = []
 
-    # 1. 角色人设
+    # 1. 角色人设（指令通道）
     wb = load_worldbook()
-    if who == "aion":
-        if wb.get("ai_persona"):
-            messages.append({"role": "user", "content": f"[你的角色设定]\n{wb['ai_persona']}"})
-            messages.append({"role": "assistant", "content": "收到，我会按照设定扮演角色。"})
-    else:
-        connor_persona = _read_connor_persona()
-        if connor_persona:
-            messages.append({"role": "user", "content": f"[你的角色设定]\n{connor_persona}"})
-            messages.append({"role": "assistant", "content": "收到，我会按照设定扮演角色。"})
-
+    from context_blocks import CTX_MEMORY, CTX_PERSONA, context_message
+    persona_text = (wb.get("ai_persona") or "") if who == "aion" else _read_connor_persona()
+    instructions = []
+    data = []
+    if persona_text:
+        persona_message = context_message(CTX_PERSONA, f"[你的角色设定]\n{persona_text}")
+        if persona_message is not None:
+            instructions.append(persona_message)
     if wb.get("user_persona"):
-        messages.append({"role": "user", "content": f"[{user_name}信息]\n{wb['user_persona']}"})
-        messages.append({"role": "assistant", "content": "收到。"})
+        user_message = context_message(CTX_PERSONA, f"[{user_name}信息]\n{wb['user_persona']}")
+        if user_message is not None:
+            instructions.append(user_message)
 
-    # 2. 最近记忆
+    # 2. 最近记忆（资料通道）
     if recent_memories:
         mem_text = "\n".join(f"- {m}" for m in recent_memories)
-        messages.append({"role": "user", "content": f"[最近的记忆]\n{mem_text}"})
-        messages.append({"role": "assistant", "content": "收到，我会参考这些记忆。"})
+        memory_message = context_message(CTX_MEMORY, f"[最近的记忆]\n{mem_text}")
+        if memory_message is not None:
+            data.append(memory_message)
 
-    # 3. 最近聊天上下文
+    # 3. 最近聊天上下文（资料通道）
     if context_msgs:
         ctx_lines = []
         for m in context_msgs:
@@ -300,8 +300,12 @@ def _build_moment_reply_messages(
             tag = f"[{m['source']}]" if m.get("source") else ""
             ctx_lines.append(f"{tag} {sender_name}: {m['content'][:300]}")
         ctx_text = "\n".join(ctx_lines)
-        messages.append({"role": "user", "content": f"[最近聊天上下文]\n{ctx_text}"})
-        messages.append({"role": "assistant", "content": "收到，我了解最近的对话内容了。"})
+        ctx_message = context_message(CTX_MEMORY, f"[最近聊天上下文]\n{ctx_text}")
+        if ctx_message is not None:
+            data.append(ctx_message)
+
+    messages.extend(instructions)
+    messages.extend(data)
 
     # 4. 朋友圈内容 + 评论
     moment_text = _format_moment_for_prompt(moment)

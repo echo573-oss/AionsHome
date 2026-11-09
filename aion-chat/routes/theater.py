@@ -462,10 +462,12 @@ async def send_message(conv_id: str, body: MsgCreate):
             break
 
     # 构建 prompt：仅注入人设 + 上下文，干净纯粹
+    from context_blocks import CTX_PERSONA, context_message
     prefix = []
     if persona_text:
-        prefix.append({"role": "user", "content": f"[角色设定]\n{persona_text}"})
-        prefix.append({"role": "assistant", "content": "收到，我会按照设定扮演角色。"})
+        persona_message = context_message(CTX_PERSONA, f"[角色设定]\n{persona_text}")
+        if persona_message is not None:
+            prefix.append(persona_message)
     if prefix:
         history = prefix + history
 
@@ -642,10 +644,12 @@ async def regenerate_message(conv_id: str, body: TheaterRegenerateRequest,
             persona_text = p.get("persona", "")
             break
 
+    from context_blocks import CTX_PERSONA, context_message
     prefix = []
     if persona_text:
-        prefix.append({"role": "user", "content": f"[角色设定]\n{persona_text}"})
-        prefix.append({"role": "assistant", "content": "收到，我会按照设定扮演角色。"})
+        persona_message = context_message(CTX_PERSONA, f"[角色设定]\n{persona_text}")
+        if persona_message is not None:
+            prefix.append(persona_message)
     if prefix:
         history = prefix + history
 

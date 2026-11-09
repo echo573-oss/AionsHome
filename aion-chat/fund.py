@@ -347,17 +347,18 @@ async def run_fund_analysis(manual: bool = False):
             history.append(d)
 
     # 世界书前缀
-    prefix = []
-    if wb.get("ai_persona"):
-        prefix.append({"role": "user", "content": f"[系统设定 - AI人设]\n{wb['ai_persona']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会按照设定扮演角色。"})
-    if wb.get("user_persona"):
-        prefix.append({"role": "user", "content": f"[系统设定 - 用户信息]\n{wb['user_persona']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会记住你的信息。"})
+    from context_blocks import CTX_RUNTIME, build_persona_prefix, context_message
+    prefix = build_persona_prefix(
+        wb,
+        persona_title="[系统设定 - AI人设]",
+        user_title="[系统设定 - 用户信息]",
+    )
 
     now_str = datetime.now().strftime("%Y年%m月%d日 %H:%M:%S")
-    if prefix:
-        prefix[-1]["content"] += f"\n系统当前的准确时间是 {now_str}"
+    # 当前时间是运行时状态，独立成条；不再塞进人设消息里
+    time_message = context_message(CTX_RUNTIME, f"系统当前的准确时间是 {now_str}")
+    if time_message is not None:
+        prefix.append(time_message)
 
     messages = prefix + history + [{"role": "user", "content": prompt_text}]
 

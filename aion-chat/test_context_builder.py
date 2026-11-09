@@ -133,7 +133,7 @@ class GroupWindowContinuityTest(unittest.IsolatedAsyncioTestCase):
                 patch.object(context_builder, "get_db", connect),
                 patch.object(chatroom, "load_worldbook", return_value={}),
                 patch.object(chatroom, "_read_connor_persona", return_value=""),
-                patch.object(chatroom, "build_ability_block", new=AsyncMock(return_value="")),
+                patch.object(chatroom, "build_context_segments", new=AsyncMock(return_value=[])),
                 patch.object(chatroom, "with_current_device_context", side_effect=lambda history, **kw: history),
                 patch.object(chatroom, "build_memory_blocks", new=AsyncMock(return_value={
                     "time_block": "test time", "memory_block": "", "digest_result": {},

@@ -644,25 +644,27 @@ class ScheduleManager:
             messages = messages_ctx
         else:
             # Aion 来源 → 沿用原有逻辑
-            from context_builder import fetch_merged_timeline, render_merged_timeline
+            from context_builder import fetch_merged_timeline, render_merged_timeline, render_transcript_note
             merged = await fetch_merged_timeline("aion", 20, conv_id=conv_id)
             history = render_merged_timeline(
                 merged,
                 "aion",
                 include_image_attachments=False,
+                include_note=False,
             )
 
-            prefix = []
-            if wb.get("ai_persona"):
-                prefix.append({"role": "user", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
-                prefix.append({"role": "assistant", "content": "收到，我会按照设定扮演角色。"})
-            if wb.get("user_persona"):
-                prefix.append({"role": "user", "content": f"[系统设定 - {user_name}信息]\n{wb['user_persona']}"})
-                prefix.append({"role": "assistant", "content": "收到，我会记住你的信息。"})
+            from context_blocks import CTX_ABILITY, CTX_MEMORY, CTX_RUNTIME, build_persona_prefix, context_message
+            prefix = build_persona_prefix(
+                wb,
+                persona_title=f"[系统设定 - {ai_name}人设]",
+                user_title=f"[系统设定 - {user_name}信息]",
+            )
 
             now_str = datetime.now().strftime("%Y年%m月%d日  %H:%M:%S")
-            if prefix:
-                prefix[-1]["content"] += f"\n系统当前的准确时间是 {now_str}"
+            # 当前时间是运行时状态，独立成条
+            time_message = context_message(CTX_RUNTIME, f"系统当前的准确时间是 {now_str}")
+            if time_message is not None:
+                prefix.append(time_message)
 
             abilities = []
             abilities.append("[MUSIC:歌曲名 歌手名] — 点歌/推荐音乐。系统自动展示播放卡片并自动播放，不要在指令外重复歌曲信息。可同时用多个。")
@@ -685,9 +687,12 @@ class ScheduleManager:
             schedule_text = build_schedule_prompt(active_schedules)
             ability_block += f"\n\n【当前日程列表】\n{schedule_text}"
 
-            cap_idx = len(prefix) if prefix else 0
-            history.insert(cap_idx, {"role": "user", "content": ability_block})
-            history.insert(cap_idx + 1, {"role": "assistant", "content": "好的，需要时我会使用这些指令。"})
+            note = render_transcript_note()
+            if note is not None:
+                prefix.append(note)
+            ability_message = context_message(CTX_ABILITY, ability_block)
+            if ability_message is not None:
+                prefix.append(ability_message)
 
             if is_proactive:
                 trigger_prompt = (
@@ -711,10 +716,12 @@ class ScheduleManager:
             mem_inject = []
             if recalled:
                 mem_lines = format_recalled_memories_for_prompt(recalled)
-                mem_inject = [
-                    {"role": "user", "content": f"[相关记忆]\n你脑海中与当前话题相关的记忆：\n{mem_lines}"},
-                    {"role": "assistant", "content": "收到，我会自然地参考这些记忆。"},
-                ]
+                memory_message = context_message(
+                    CTX_MEMORY,
+                    f"[相关记忆]\n你脑海中与当前话题相关的记忆：\n{mem_lines}",
+                )
+                if memory_message is not None:
+                    mem_inject = [memory_message]
 
             trigger_message = {"role": "user", "content": trigger_prompt}
             if checkpoint_phone_attachment:
@@ -1012,24 +1019,26 @@ class ScheduleManager:
             messages = messages_ctx
         else:
             # Aion 来源 → 沿用原有逻辑
-            from context_builder import fetch_merged_timeline, render_merged_timeline
+            from context_builder import fetch_merged_timeline, render_merged_timeline, render_transcript_note
             merged = await fetch_merged_timeline("aion", 20, conv_id=conv_id)
             history = render_merged_timeline(
                 merged,
                 "aion",
                 include_image_attachments=False,
+                include_note=False,
             )
 
-            prefix = []
-            if wb.get("ai_persona"):
-                prefix.append({"role": "user", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
-                prefix.append({"role": "assistant", "content": "收到，我会按照设定扮演角色。"})
-            if wb.get("user_persona"):
-                prefix.append({"role": "user", "content": f"[系统设定 - {user_name}信息]\n{wb['user_persona']}"})
-                prefix.append({"role": "assistant", "content": "收到，我会记住你的信息。"})
+            from context_blocks import CTX_ABILITY, CTX_MEMORY, CTX_RUNTIME, build_persona_prefix, context_message
+            prefix = build_persona_prefix(
+                wb,
+                persona_title=f"[系统设定 - {ai_name}人设]",
+                user_title=f"[系统设定 - {user_name}信息]",
+            )
 
-            if prefix:
-                prefix[-1]["content"] += f"\n系统当前的准确时间是 {now_str}"
+            # 当前时间是运行时状态，独立成条
+            time_message = context_message(CTX_RUNTIME, f"系统当前的准确时间是 {now_str}")
+            if time_message is not None:
+                prefix.append(time_message)
 
             abilities = []
             abilities.append("[MUSIC:歌曲名 歌手名] — 点歌/推荐音乐。系统自动展示播放卡片并自动播放，不要在指令外重复歌曲信息。可同时用多个。")
@@ -1052,9 +1061,12 @@ class ScheduleManager:
             schedule_text = build_schedule_prompt(active_schedules)
             ability_block += f"\n\n【当前日程列表】\n{schedule_text}"
 
-            cap_idx = len(prefix) if prefix else 0
-            history.insert(cap_idx, {"role": "user", "content": ability_block})
-            history.insert(cap_idx + 1, {"role": "assistant", "content": "好的，需要时我会使用这些指令。"})
+            note = render_transcript_note()
+            if note is not None:
+                prefix.append(note)
+            ability_message = context_message(CTX_ABILITY, ability_block)
+            if ability_message is not None:
+                prefix.append(ability_message)
 
             trigger_msg = {"role": "user", "content": trigger_prompt}
             if fname:

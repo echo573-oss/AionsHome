@@ -86,7 +86,7 @@ class ChatRegenerateTests(unittest.IsolatedAsyncioTestCase):
             patch("routes.chat.fetch_merged_timeline", new=AsyncMock(return_value=[])),
             patch("routes.chat.render_merged_timeline", return_value=list(rendered_history)),
             patch("routes.chat.load_worldbook", return_value={}),
-            patch("routes.chat._insert_private_ability_block", new=AsyncMock(return_value=0)),
+            patch("routes.chat._build_private_context_messages", new=AsyncMock(return_value=[])),
             patch("routes.chat.instant_digest", new=fake_instant_digest),
             patch("routes.chat.build_health_summary", new=AsyncMock(return_value="")),
             patch("routes.chat.build_surfacing_memories", new=AsyncMock(return_value=([], set()))),
@@ -138,7 +138,7 @@ class ChatRegenerateTests(unittest.IsolatedAsyncioTestCase):
             patch("routes.chat.fetch_merged_timeline", new=AsyncMock(return_value=[])),
             patch("routes.chat.render_merged_timeline", return_value=list(rendered_history)),
             patch("routes.chat.load_worldbook", return_value={}),
-            patch("routes.chat._insert_private_ability_block", new=AsyncMock(return_value=0)),
+            patch("routes.chat._build_private_context_messages", new=AsyncMock(return_value=[])),
             patch("routes.chat.instant_digest", new=AsyncMock(return_value={
                 "keywords": [],
                 "topic": "unit topic",

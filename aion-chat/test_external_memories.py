@@ -61,9 +61,10 @@ class ExternalMemoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('修正后的兔子约定', await recent_context('aion'))
         self.assertNotIn('养花', await recent_context('aion'))
         self.assertIn('养花', await recent_context('connor'))
-        from context_builder import build_ability_block
+        from context_blocks import segments_text
+        from context_builder import build_context_segments
         with patch('context_builder.build_capability_prompt_items',new=AsyncMock(return_value=[])), patch('context_builder.is_capability_enabled',return_value=False), patch('context_builder.get_device_context_for_prompt',return_value=''), patch('context_builder.build_cli_file_storage_text',return_value=''):
-            context = await build_ability_block('用户',who='aion',excluded_capabilities={'post_sentinel'})
+            context = segments_text(await build_context_segments('用户',who='aion',excluded_capabilities={'post_sentinel'}))
         self.assertIn('修正后的兔子约定', context)
         self.assertNotIn('养花', context)
         async with aiosqlite.connect(self.path) as db:

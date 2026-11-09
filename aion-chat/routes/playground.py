@@ -13,6 +13,11 @@ from pydantic import BaseModel, Field
 from typing import Optional
 
 from config import load_worldbook, SETTINGS, get_key, MODELS
+from context_blocks import (
+    CTX_MEMORY,
+    build_persona_prefix,
+    context_message,
+)
 from database import get_db
 from ws import manager
 from mcp_client import mcp_manager
@@ -426,12 +431,10 @@ async def run_instruction(req: RunRequest):
             recent_chat = await recent_chat_task
             memories = await memories_task
 
-            # 组装 system prompt — 用 user/assistant 对话对注入人设（与主聊天一致，防止漂移）
+            # 组装上下文 — 与主聊天一致，用带语义标记的上下文消息，
+            # 不再用 user/assistant 伪对话对注入人设
             ai_name = wb.get("ai_name", "AI")
             user_name = wb.get("user_name", "用户")
-            ai_persona = wb.get("ai_persona", "")
-            user_persona = wb.get("user_persona", "")
-            system_prompt_text = wb.get("system_prompt", "") if wb.get("system_prompt_enabled", True) else ""
 
             # 核心身份 system prompt
             system_parts = []
@@ -443,27 +446,25 @@ async def run_instruction(req: RunRequest):
 
             core_system = "\n".join(system_parts)
 
-            # 用 user/assistant 对话对注入人设（与主聊天 chat.py 保持一致的注入方式）
-            prefix = []
-            if ai_persona:
-                prefix.append({"role": "user", "content": f"[系统设定 - AI人设]\n{ai_persona}"})
-                prefix.append({"role": "assistant", "content": "收到，我会按照设定扮演角色。"})
-            if user_persona:
-                prefix.append({"role": "user", "content": f"[系统设定 - 用户信息]\n{user_persona}"})
-                prefix.append({"role": "assistant", "content": "收到，我会记住你的信息。"})
-            if system_prompt_text:
-                prefix.append({"role": "user", "content": f"[系统提示]\n{system_prompt_text}"})
-                prefix.append({"role": "assistant", "content": "收到，我会遵循这些规则。"})
+            # 人设与规则走指令通道；近期对话与记忆走资料通道
+            instructions = build_persona_prefix(
+                wb,
+                persona_title="[系统设定 - AI人设]",
+                user_title="[系统设定 - 用户信息]",
+            )
 
+            data = []
             # 注入近期对话上下文和记忆
             if recent_chat:
                 chat_text = "\n".join((("用户" if m["role"]=="user" else "AI") + ": " + m["content"]) for m in recent_chat)
-                prefix.append({"role": "user", "content": f"[最近对话记录]\n{chat_text}"})
-                prefix.append({"role": "assistant", "content": "收到，我记住了我们最近的对话内容。"})
+                message = context_message(CTX_MEMORY, f"[最近对话记录]\n{chat_text}")
+                if message:
+                    data.append(message)
             if memories:
                 mem_text = "\n".join(f"- {m}" for m in memories)
-                prefix.append({"role": "user", "content": f"[近期记忆]\n{mem_text}"})
-                prefix.append({"role": "assistant", "content": "收到，我记住了这些信息，出门的时候会带着这些记忆。"})
+                message = context_message(CTX_MEMORY, f"[近期记忆]\n{mem_text}")
+                if message:
+                    data.append(message)
 
             # ── 2. 工具列表 ──
             tools = mcp_manager.get_tools_for_ai(server)
@@ -472,7 +473,7 @@ async def run_instruction(req: RunRequest):
             # ── 3. Tool calling 循环 ──
             messages = [
                 {"role": "system", "content": core_system},
-            ] + prefix + [
+            ] + instructions + data + [
                 {"role": "user", "content": instruction},
             ]
 

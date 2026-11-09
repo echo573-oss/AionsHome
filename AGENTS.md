@@ -88,7 +88,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-tests.ps1
 2. **不要改 SQLite 日志模式或 `synchronous`**。属于需单独决定的事：先在数据库副本上对比并发读写与恢复流程。
 3. **不要改 `/static/*` 的缓存策略**。Android 侧已有 SHA-256 资源清单与本地缓存，先测清楚冷启动和二次打开各下载了什么再决定改哪一层。
 
-## 当前状态（2026-11-07）
+## 当前状态（2026-11-09）
 
 - 测试隔离、同秒翻页与记忆库跳转修复、AGY CLI 代理环境变量传递、以及历史漂移测试清理均已提交入库。
-- Python (`unittest` + `pytest`) 与 JavaScript (`node:test`) 三套测试套件均已达到 100% 全绿基线。
+- **上下文构建已统一**：`context_blocks.py` 定义统一上下文结构（人设与规则 / 能力 / 运行时状态 / 记忆 / 外部资料 / 真实对话），
+  分**指令通道**（system 角色）与**资料通道**（低优先级 user 角色 + 资料标注）。
+  主私聊、聊天室、娱乐室以及相机 / 基金 / 位置 / 日程 / 动态 / 剧场 / 约会 / 自主行动 / 访客会客厅
+  都已迁移，不再用 "user(配置) + assistant(收到，我会…)" 的伪对话注入；
+  CLI 线路（Gemini / Codex / Antigravity）统一渲染成 `[System Instruction]` 与 `[Reference Data]` 两段。
+  新增上下文或新模型线路请复用 `context_blocks.py`，不要再造伪对话对。
+  人设前缀统一走 `context_blocks.build_persona_prefix()`；时间线读法说明走 `context_builder.render_transcript_note()`。
+- **测试基线已漂移**：三套测试套件曾是 100% 全绿（2026-11-07 状态）。2026-11-09 实测 unittest 有 **9 个既有失败**
+  （`test_app_supervision_v1`、`test_chatroom_persona_mobile_performance`、`test_chatroom_stream_safety`、
+  `test_link_preview_ui`、`test_memory_count_api`、`test_chat_bubble_style_parity`），
+  已逐个在干净 worktree（`git worktree add` 到 HEAD）上复现，**与上下文改动无关**。
+  排查失败前先在干净副本上对比，别默认是自己的锅。

@@ -93,7 +93,7 @@ class ActiveMemoryCapabilityTest(unittest.IsolatedAsyncioTestCase):
             patch.object(context_builder, "is_capability_enabled", return_value=False),
             patch.object(context_builder, "get_device_context_for_prompt", return_value=""),
         ):
-            await context_builder.build_ability_block(
+            await context_builder.build_context_segments(
                 "宝宝", excluded_capabilities={"memory_search"}
             )
         self.assertEqual(

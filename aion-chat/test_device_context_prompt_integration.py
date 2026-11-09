@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 import context_builder
+from context_blocks import segments_text
 
 
 class DeviceContextPromptIntegrationTest(unittest.IsolatedAsyncioTestCase):
@@ -20,7 +21,7 @@ class DeviceContextPromptIntegrationTest(unittest.IsolatedAsyncioTestCase):
                 return_value="【用户当前情境】\n- 正在电脑前操作。",
             ) as context_prompt,
         ):
-            result = await context_builder.build_ability_block("Ithil")
+            result = segments_text(await context_builder.build_context_segments("Ithil"))
 
         self.assertIn("【用户当前情境】", result)
         context_prompt.assert_called_once_with()
@@ -36,7 +37,7 @@ class DeviceContextPromptIntegrationTest(unittest.IsolatedAsyncioTestCase):
             patch.object(context_builder, "build_cli_file_storage_text", return_value=""),
             patch.object(context_builder, "get_device_context_for_prompt", return_value=""),
         ):
-            result = await context_builder.build_ability_block("Ithil")
+            result = segments_text(await context_builder.build_context_segments("Ithil"))
 
         self.assertEqual("", result)
 

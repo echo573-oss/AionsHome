@@ -830,15 +830,19 @@ async def _call_core_location(
         merged,
         "aion",
         include_image_attachments=False,
+        include_note=False,
     )
 
-    prefix = []
-    if wb.get("ai_persona"):
-        prefix.append({"role": "user", "content": f"[系统设定 - {ai_name}人设]\n{wb['ai_persona']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会按照设定扮演角色。"})
-    if wb.get("user_persona"):
-        prefix.append({"role": "user", "content": f"[系统设定 - {user_name}信息]\n{wb['user_persona']}"})
-        prefix.append({"role": "assistant", "content": "收到，我会记住你的信息。"})
+    from context_blocks import CTX_MEMORY, build_persona_prefix, context_message
+    prefix = build_persona_prefix(
+        wb,
+        persona_title=f"[系统设定 - {ai_name}人设]",
+        user_title=f"[系统设定 - {user_name}信息]",
+    )
+    from context_builder import render_transcript_note
+    note = render_transcript_note()
+    if note is not None:
+        prefix.append(note)
 
     core_parts = [f"【位置变化通知】{event_desc}"]
     if core_reason:
@@ -861,10 +865,12 @@ async def _call_core_location(
     mem_inject = []
     if recalled:
         mem_lines = format_recalled_memories_for_prompt(recalled)
-        mem_inject = [
-            {"role": "user", "content": f"[相关记忆]\n你脑海中与当前话题相关的记忆：\n{mem_lines}"},
-            {"role": "assistant", "content": "收到，我会自然地参考这些记忆。"},
-        ]
+        memory_message = context_message(
+            CTX_MEMORY,
+            f"[相关记忆]\n你脑海中与当前话题相关的记忆：\n{mem_lines}",
+        )
+        if memory_message is not None:
+            mem_inject = [memory_message]
 
     messages = prefix + mem_inject + history + [{"role": "user", "content": core_prompt}]
     from proactive_companionship import inject_proactive_ability

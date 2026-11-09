@@ -124,7 +124,7 @@ class MemoryEvidenceTests(unittest.IsolatedAsyncioTestCase):
                 lookup = stack.enter_context(patch.object(search, 'search_actor_memories', AsyncMock(return_value=[])))
                 module = chat if actor == 'aion' else chatroom
                 stack.enter_context(patch.object(module, 'search_actor_memories', AsyncMock(return_value=[])))
-                stack.enter_context(patch.object(module, 'build_ability_block', AsyncMock(return_value='')))
+                stack.enter_context(patch.object(module, 'build_context_segments', AsyncMock(return_value=[])))
                 stack.enter_context(patch('config.load_worldbook', return_value={'user_name':'用户','ai_name':'AI'}))
                 if actor == 'aion':
                     stack.enter_context(patch.object(chat, 'load_worldbook', return_value={'user_name':'用户','ai_name':'AI'}))

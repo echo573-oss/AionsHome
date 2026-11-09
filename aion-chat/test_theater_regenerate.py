@@ -112,10 +112,9 @@ class TheaterRegenerateTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIs(captured["stream_kwargs"].get("include_device_context"), False)
                 self.assertNotIn("discard this reply", json.dumps(captured["history"]))
                 self.assertEqual(
-                    captured["history"][:2],
+                    captured["history"][:1],
                     [
-                        {"role": "user", "content": "[角色设定]\nfresh persona text"},
-                        {"role": "assistant", "content": "收到，我会按照设定扮演角色。"},
+                        {"role": "system", "content": "[角色设定]\nfresh persona text", "_ctx": "persona"},
                     ],
                 )
                 broadcast.assert_any_await(
