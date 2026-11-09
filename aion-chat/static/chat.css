@@ -2367,3 +2367,15 @@ body[data-theme="light"] .lounge-report-card { background: var(--surface); }
   .private-message-header { margin-bottom: 2px; }
   .private-message-flow { gap: 6px; }
 }
+
+/* Desktop private-chat reading rhythm: line spacing and paragraph cadence. */
+@media (min-width: 769px) {
+  .private-ai-message-content.markdown-body,
+  .msg-row .user-message-unit .msg-bubble.markdown-body {
+    line-height: 1.62;
+  }
+  .private-ai-message-content.markdown-body > p:not(:last-child),
+  .msg-row .user-message-unit .msg-bubble.markdown-body > p:not(:last-child) {
+    margin-bottom: .62em;
+  }
+}
