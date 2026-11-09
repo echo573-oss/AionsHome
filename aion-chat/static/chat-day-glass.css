@@ -255,3 +255,15 @@ body[data-theme="light"] :is(.modal-overlay, .settings-overlay, .memory-overlay,
 body[data-theme="light"] .sidebar-footer .sidebar-shortcut-grid > button { background: rgba(255,255,255,.34); border-color: rgba(153,99,123,.16); }
 body[data-theme="light"] .sidebar-footer .sidebar-home-link { background: rgba(255,252,250,.40); border-color: rgba(153,99,123,.28); }
 body[data-theme="light"] .sidebar-footer button:hover { background: rgba(255,255,255,.62); }
+
+/* Sidebar round two: warm daylight header and quiet conversation counts. */
+body[data-theme="light"] .sidebar-header button:first-child {
+  background: linear-gradient(140deg, rgba(255,255,255,.80), rgba(244,229,235,.62));
+  color: var(--accent2);
+  border-color: rgba(153,99,123,.30);
+  box-shadow: 0 3px 12px rgba(94,62,75,.07), inset 0 1px 0 rgba(255,255,255,.76);
+}
+body[data-theme="light"] .conv-count {
+  background: rgba(255,255,255,.28);
+  border-color: rgba(153,99,123,.14);
+}
