@@ -2418,6 +2418,7 @@ body[data-theme="dark"] .conv-item.active {
   background: linear-gradient(110deg, rgba(102, 108, 167, .23), rgba(96, 75, 137, .16));
   border-color: var(--border);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+}
 
 /* Desktop private-chat reading rhythm: line spacing and paragraph cadence. */
 @media (min-width: 769px) {

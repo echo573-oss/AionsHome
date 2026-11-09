@@ -5641,10 +5641,50 @@ document.getElementById('settingsOverlay').addEventListener('click', (e) => {
 //  侧栏
 // ══════════════════════════════════════════════════
 
-function openSidebar() { sidebar.classList.add('open'); backdrop.classList.add('active'); }
-function closeSidebar() { sidebar.classList.remove('open'); backdrop.classList.remove('active'); }
-menuBtn.addEventListener('click', openSidebar);
+const sidebarMobile = window.matchMedia('(max-width: 700px)');
+let desktopSidebarHidden = localStorage.getItem('aion_desktop_sidebar_hidden') === '1';
+
+function syncSidebarToggle() {
+  document.body.classList.toggle('desktop-sidebar-hidden', !sidebarMobile.matches && desktopSidebarHidden);
+  const expanded = sidebarMobile.matches ? sidebar.classList.contains('open') : !desktopSidebarHidden;
+  const label = expanded ? '收起聊天室列表' : '展开聊天室列表';
+  if (menuBtn) {
+    menuBtn.setAttribute('aria-expanded', String(expanded));
+    menuBtn.setAttribute('aria-label', label);
+    menuBtn.title = label;
+  }
+}
+
+function toggleSidebar() {
+  if (sidebarMobile.matches) {
+    if (sidebar.classList.contains('open')) closeSidebar();
+    else openSidebar();
+    return;
+  }
+  desktopSidebarHidden = !desktopSidebarHidden;
+  localStorage.setItem('aion_desktop_sidebar_hidden', desktopSidebarHidden ? '1' : '0');
+  syncSidebarToggle();
+}
+
+function openSidebar() {
+  sidebar.classList.add('open');
+  backdrop.classList.add('active');
+  syncSidebarToggle();
+}
+
+function closeSidebar() {
+  sidebar.classList.remove('open');
+  backdrop.classList.remove('active');
+  syncSidebarToggle();
+}
+
+menuBtn.addEventListener('click', toggleSidebar);
 backdrop.addEventListener('click', closeSidebar);
+sidebarMobile.addEventListener('change', () => {
+  closeSidebar();
+  syncSidebarToggle();
+});
+syncSidebarToggle();
 
 // ══════════════════════════════════════════════════
 //  导航
