@@ -56,7 +56,8 @@ async function main() {
   {
     for (const page of ['chat', 'chatroom']) {
       const html = fs.readFileSync(`${__dirname}/static/${page}.html`, 'utf8');
-      const handler = html.match(/<button\b[^>]*onclick="([^"]+)"[^>]*>💗 密语时刻<\/button>/)[1];
+      const buttonHtml = html.match(/<button\b[^>]*onclick="[^"]*"[^>]*>(?:(?!<\/button>)[\s\S])*?密语时刻(?:(?!<\/button>)[\s\S])*?<\/button>/)[0];
+      const handler = buttonHtml.match(/onclick="([^"]+)"/)[1];
       const source = fs.readFileSync(`${__dirname}/static/${page}.js`, 'utf8');
       const helper = source.match(/function crOpenToyControls\(\) \{[\s\S]*?\n\}/)?.[0] || '';
       for (const embedded of [true, false]) {
