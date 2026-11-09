@@ -651,6 +651,7 @@ async def init_db():
         """)
         for col, defn in [
             ("reasoning_content", "TEXT DEFAULT ''"),
+            ("starred", "INTEGER DEFAULT 0"),
             ("ai_feedback_rating", "TEXT DEFAULT ''"),
             ("ai_feedback_reason", "TEXT DEFAULT ''"),
             ("ai_feedback_created_at", "REAL"),

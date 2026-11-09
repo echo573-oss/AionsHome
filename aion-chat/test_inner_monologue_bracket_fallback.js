@@ -35,7 +35,8 @@ const chatroomSource = chatroomScript.slice(
   chatroomScript.indexOf('function crBubbleParts'),
   chatroomScript.indexOf('let crProactiveCompanionshipStatus'),
 );
-const chatroomContext = {};
+// 聊天室的气泡拆段统一走 ChatroomMarkdown.splitUserBubbleParts，沙箱要带上这个依赖
+const chatroomContext = { window: { ChatroomMarkdown: require('./static/chatroom-markdown.js') } };
 vm.runInNewContext(chatroomSource, chatroomContext);
 for (const text of mixedBracketTexts) {
   assert.deepStrictEqual(plain(chatroomContext.crMessageContentItems(text)), expected);

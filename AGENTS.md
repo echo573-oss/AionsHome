@@ -119,6 +119,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-tests.ps1
   人设前缀统一走 `context_blocks.build_persona_prefix()`；时间线读法说明走 `context_builder.render_transcript_note()`。
 - **发往供应商前先剥内部元数据**：娱乐室直连 OpenAI 兼容接口，不经过 `build_multimodal_messages` 重建，
   需要自己用 `routes/playground._sanitize_messages()` 过滤 `_ctx` / `_timeline_sender` 这类内部键。
+- **两个聊天页共用一套气泡拆段**：私聊与聊天室的 AI / 用户消息都走
+  `chatroom-markdown.js` 的 `splitUserBubbleParts()`，标题独立成块、正文每段一个气泡、
+  单换行也拆段（不再合并成同段里的 `<br>`）。改任一页的渲染都会同时影响另一页与相关 JS 测试，
+  注意 `test_private_chat_markdown_messages.js`、`test_chatroom_markdown_messages.js`、
+  `test_inner_monologue_bracket_fallback.js` 三处的契约。
+- **聊天室页已与私聊页对齐**：`chatroom_messages` 表有 `starred` 列，消息菜单含复制 / 星标，
+  顶部 bar 有"回到主页"，侧边栏有"星标消息"面板。
 - **测试基线已漂移**：三套测试套件曾是 100% 全绿（2026-11-07 状态）。2026-11-09 实测 unittest 有 **9 个既有失败**
   （`test_app_supervision_v1`、`test_chatroom_persona_mobile_performance`、`test_chatroom_stream_safety`、
   `test_link_preview_ui`、`test_memory_count_api`、`test_chat_bubble_style_parity`），

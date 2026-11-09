@@ -2101,11 +2101,9 @@ function privateMessageContentItems(value, isUser = false) {
   const text = String(value || '');
   const items = [];
   const monologueRe = /[\[【]心里嘀咕[：:]\s*([^\]】]+?)[\]】]/g;
-  const parts = isUser
-    ? (window.ChatroomMarkdown?.splitUserBubbleParts
-        ? window.ChatroomMarkdown.splitUserBubbleParts(text)
-        : text.split(/\n+/).map(part => part.trim()).filter(Boolean))
-    : (text.trim() ? [text] : []);
+  const parts = window.ChatroomMarkdown?.splitUserBubbleParts
+    ? window.ChatroomMarkdown.splitUserBubbleParts(text)
+    : text.split(/\n+/).map(part => part.trim()).filter(Boolean);
   for (const part of parts) {
     let cursor = 0;
     let match;

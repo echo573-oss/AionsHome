@@ -8,13 +8,20 @@ const vm = require('node:vm');
 
 const ROOT = __dirname;
 
-test('private AI preserves single versus blank line spacing, including after a heading', () => {
+test('private AI splits into one bubble per paragraph, same rhythm as user messages', () => {
   const html = loadPrivateMessageRenderer()({
     id: 'line-breaks', role: 'assistant', created_at: 1, attachments: [],
     content: '# 标题\n第一行。\n**第二行。**\n\n第二段。',
   });
-  assert.equal((html.match(/<p>/g) || []).length, 2);
-  assert.match(html, /第一行。<br>\n<span class="line-indent" aria-hidden="true"><\/span><strong>第二行。<\/strong>/);
+  // 标题独立成块，正文每段一个块 —— 私聊 AI 与用户消息、聊天室 AI 共用同一套拆段规则
+  assert.equal((html.match(/class="private-ai-message-content markdown-body"/g) || []).length, 4);
+  assert.equal((html.match(/<p>/g) || []).length, 3);
+  assert.match(html, /<h1>标题<\/h1>/);
+  assert.match(html, /<p>第一行。<\/p>/);
+  assert.match(html, /<p><strong>第二行。<\/strong><\/p>/);
+  assert.match(html, /<p>第二段。<\/p>/);
+  // 单换行也拆段，不再合并成同一段里的 <br>
+  assert.doesNotMatch(html, /<br>/);
 });
 
 function functionBlock(source, startMarker, endMarker) {
@@ -103,7 +110,8 @@ test('private AI markdown renders without a bubble below one identity header', (
   assert.equal((html.match(/class="msg-avatar"/g) || []).length, 1);
   assert.doesNotMatch(html, /class="msg-bubble/);
   assert.match(html, /class="private-message-header"/);
-  assert.match(html, /class="private-ai-message-content markdown-body"/);
+  // 标题与两段正文各占一个内容块，身份头仍然只有一个
+  assert.equal((html.match(/class="private-ai-message-content markdown-body"/g) || []).length, 3);
   assert.match(html, /<h2>醒得正好。<\/h2>/);
   assert.match(html, /<strong>先喝水。<\/strong>/);
   assert.ok(html.indexOf('class="private-message-header"') < html.indexOf('class="private-ai-message-content'));

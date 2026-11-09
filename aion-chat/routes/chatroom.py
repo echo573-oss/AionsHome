@@ -3285,6 +3285,41 @@ async def update_message(msg_id: str, body: MsgUpdate):
     return {"ok": True, "message": data}
 
 
+# ── 星标消息 ─────────────────────────────────────
+@router.patch("/messages/{msg_id}/star")
+async def toggle_star_message(msg_id: str):
+    """切换聊天室消息的星标状态"""
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("SELECT * FROM chatroom_messages WHERE id=?", (msg_id,))
+        row = await cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="message not found")
+        new_val = 0 if (row["starred"] or 0) else 1
+        await db.execute("UPDATE chatroom_messages SET starred=? WHERE id=?", (new_val, msg_id))
+        await db.commit()
+        cur2 = await db.execute("SELECT * FROM chatroom_messages WHERE id=?", (msg_id,))
+        msg = await cur2.fetchone()
+        data = _chatroom_message_dict(msg)
+    await broadcast_synced(manager, {"type": "chatroom_msg_updated", "data": data})
+    return {"ok": True, "starred": new_val, "message": data}
+
+
+@router.get("/rooms/{room_id}/starred-messages")
+async def list_starred_messages(room_id: str):
+    """获取指定房间的星标消息，按时间倒序"""
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT m.*, r.title AS room_title FROM chatroom_messages m "
+            "LEFT JOIN chatroom_rooms r ON m.room_id = r.id "
+            "WHERE m.room_id=? AND m.starred=1 ORDER BY m.created_at DESC",
+            (room_id,),
+        )
+        rows = await cur.fetchall()
+    return [_chatroom_message_dict(r) for r in rows]
+
+
 @router.patch("/messages/{msg_id}/feedback")
 async def update_message_feedback(msg_id: str, body: MessageFeedbackUpdate):
     rating = (body.rating or "").strip().lower()

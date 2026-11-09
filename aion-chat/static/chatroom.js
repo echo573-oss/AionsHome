@@ -2982,6 +2982,10 @@ function renderMessages(msgs) {
 
 function crMsgMenuHtml(sender, msgId, opts = {}) {
   if (!msgId) return '';
+  const copyHtml = `<button onclick="copyChatroomMsg('${msgId}');closeMsgMenus()">复制</button>`;
+  // 只有消息本身带 starred 字段时才给星标入口（流式中的消息还没落库）
+  const starHtml = opts.starred === undefined ? ''
+    : `<button onclick="toggleCrStar('${msgId}');closeMsgMenus()">${opts.starred ? '取消星标' : '⭐ 星标'}</button>`;
   const editHtml = sender === 'aion' || sender === 'connor'
     ? `<button onclick="editChatroomAiMsg('${msgId}');closeMsgMenus()">编辑</button>` : '';
   const actionHtml = opts.deleteOnly || sender === 'system'
@@ -2995,6 +2999,8 @@ function crMsgMenuHtml(sender, msgId, opts = {}) {
       <div class="msg-menu-dropdown">
         ${editHtml}
         ${actionHtml}
+        ${copyHtml}
+        ${starHtml}
         <button class="danger" onclick="deleteMsg('${msgId}', this)">\u5220\u9664</button>
       </div>
     </div>`;
@@ -3018,8 +3024,110 @@ function crMsgFeedbackHtml(msg) {
   </span>`;
 }
 
+/* ── 消息复制 ── */
+async function copyChatroomMsg(msgId) {
+  const msg = crMessagesById[msgId];
+  if (!msg) return;
+  const text = String(msg.content || '').replace(/<meta>[\s\S]*?<\/meta>/g, '').trim();
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('已复制');
+  } catch (e) {
+    console.error('复制失败:', e);
+    toast('复制失败');
+  }
+}
+
+/* ── 星标消息 ── */
+async function toggleCrStar(msgId) {
+  try {
+    await api(`/messages/${encodeURIComponent(msgId)}/star`, { method: 'PATCH' });
+    // WebSocket 广播 chatroom_msg_updated 后会自动重渲染当前行
+  } catch (e) {
+    console.error('星标切换失败:', e);
+    toast('星标切换失败');
+  }
+}
+
+function closeCrStarredPanel() {
+  document.getElementById('crStarredModal')?.classList.remove('show');
+}
+
+async function openCrStarredPanel() {
+  closeSidebar();
+  const modal = document.getElementById('crStarredModal');
+  const list = document.getElementById('crStarredList');
+  if (!modal || !list) return;
+  list.innerHTML = '<div class="starred-empty">加载中…</div>';
+  modal.classList.add('show');
+  if (!currentRoom) {
+    list.innerHTML = '<div class="starred-empty">暂无星标消息</div>';
+    return;
+  }
+  try {
+    const items = await api(`/rooms/${encodeURIComponent(currentRoom.id)}/starred-messages`);
+    renderCrStarredList(items);
+  } catch (e) {
+    console.error('加载星标失败:', e);
+    list.innerHTML = '<div class="starred-empty">加载失败，请重试</div>';
+  }
+}
+
+function renderCrStarredList(items) {
+  const el = document.getElementById('crStarredList');
+  if (!el) return;
+  if (!items || !items.length) {
+    el.innerHTML = '<div class="starred-empty">暂无星标消息</div>';
+    return;
+  }
+  const roomTitle = esc(currentRoom?.title || '聊天室');
+  el.innerHTML = items.map(m => {
+    const t = m.created_at ? new Date(m.created_at * 1000) : null;
+    const timeStr = t ? `${t.getMonth()+1}/${t.getDate()} ${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}` : '';
+    const roleLabel = esc(crName(m.sender || 'user'));
+    const preview = esc(String(m.content || '').replace(/<meta>[\s\S]*?<\/meta>/g, '').trim().slice(0, 80));
+    const msgId = esc(m.id);
+    return `<div class="starred-item" onclick="jumpToCrStarredMsg('${msgId}')">
+      <div class="starred-item-header">
+        <span class="starred-item-conv">${roomTitle}</span>
+        <span style="display:flex;align-items:center;gap:6px">
+          <span class="starred-item-time">${timeStr}</span>
+          <button class="starred-item-unstar" onclick="event.stopPropagation();unstarFromCrPanel('${msgId}')" title="取消星标">✕</button>
+        </span>
+      </div>
+      <div class="starred-item-role">${roleLabel}</div>
+      <div class="starred-item-preview">${preview}</div>
+    </div>`;
+  }).join('');
+}
+
+async function unstarFromCrPanel(msgId) {
+  await toggleCrStar(msgId);
+  if (!currentRoom) return;
+  try {
+    const items = await api(`/rooms/${encodeURIComponent(currentRoom.id)}/starred-messages`);
+    renderCrStarredList(items);
+  } catch (e) {
+    console.error('刷新星标列表失败:', e);
+  }
+}
+
+function jumpToCrStarredMsg(msgId) {
+  closeCrStarredPanel();
+  const row = document.querySelector(`[data-msg-id="${msgId}"]`);
+  if (!row) {
+    toast('这条消息不在当前窗口，试试搜索或往上翻');
+    return;
+  }
+  row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  row.classList.add('star-highlight');
+  setTimeout(() => row.classList.remove('star-highlight'), 2000);
+}
+
 function crMsgSenderLineHtml(sender, name, msgId, msg = null, opts = {}) {
-  const menuHtml = crMsgMenuHtml(sender, msgId, { deleteOnly: opts.deleteOnly });
+  // 只有消息对象真的带 starred 字段时才算已星标（流式消息没有这个字段）
+  const starred = msg && 'starred' in msg ? !!msg.starred : undefined;
+  const menuHtml = crMsgMenuHtml(sender, msgId, { deleteOnly: opts.deleteOnly, starred });
   const feedbackHtml = crMsgFeedbackHtml(msg || { id: msgId, sender });
   const timeHtml = msg?.created_at
     ? `<span class="message-time">${esc(timeStr(msg.created_at))}</span>`
@@ -3031,10 +3139,11 @@ function crMsgSenderLineHtml(sender, name, msgId, msg = null, opts = {}) {
   const memoryHtml = opts.memory && msgId
     ? `<button class="memory-record-hint" onclick="event.stopPropagation();crShowMemoryRecordCard('${msgId}')" title="已记录到记忆库">💡</button>`
     : '';
+  const starBadge = starred ? '<span class="msg-star-badge">✨</span>' : '';
   if (sender !== 'user') {
-    return `<div class="sender-line"><span class="sender-label ${sender}">${esc(name)}</span>${timeHtml}${menuHtml}${feedbackHtml}${ttsHtml}${memoryHtml}</div>`;
+    return `<div class="sender-line"><span class="sender-label ${sender}">${esc(name)}</span>${timeHtml}${menuHtml}${feedbackHtml}${ttsHtml}${memoryHtml}${starBadge}</div>`;
   }
-  return timeHtml || menuHtml ? `<div class="sender-line user-line">${timeHtml}${menuHtml}</div>` : '';
+  return `<div class="sender-line user-line">${menuHtml}${timeHtml}<span class="sender-label user">${esc(name)}</span>${starBadge}</div>`;
 }
 
 function crEnsureMsgMenu(row, sender, msgId) {
@@ -3069,12 +3178,9 @@ function crEnsureMsgMenu(row, sender, msgId) {
 
 function crBubbleParts(raw, isUser = false) {
   const text = raw || '';
-  if (isUser) {
-    return window.ChatroomMarkdown?.splitUserBubbleParts
-      ? window.ChatroomMarkdown.splitUserBubbleParts(text)
-      : text.split(/\n+/).map(part => part.trim()).filter(Boolean);
-  }
-  return text.trim() ? [text] : [];
+  return window.ChatroomMarkdown?.splitUserBubbleParts
+    ? window.ChatroomMarkdown.splitUserBubbleParts(text)
+    : text.split(/\n+/).map(part => part.trim()).filter(Boolean);
 }
 
 function crMessageContentItems(raw, isUser = false) {
@@ -3212,7 +3318,7 @@ function crRenderMessageItems(items, { sender, name, avatar, msgId, msg, fmt, is
     ? msgHTML(item.message)
     : item.type === 'monologue'
       ? `<div class="inner-monologue-line">${esc(item.text)}</div>`
-      : `<div class="${isUser ? 'bubble' : 'ai-message-content'} markdown-body">${crMarkdownMessageHtml(item.text, isUser)}</div>`
+      : `<div class="bubble ${isUser ? '' : 'ai-message-content '}markdown-body">${crMarkdownMessageHtml(item.text, isUser)}</div>`
   ).join('');
   return crMessageUnitHtml({
     sender,
@@ -3988,7 +4094,7 @@ function startStreamingBubble(sender, id) {
   streamingLookup = null;
   const name = crName(sender);
   const avatar = AVATARS[sender] || AVATARS.user;
-  const liveContentClass = sender === 'user' ? 'bubble markdown-body' : 'ai-message-content markdown-body';
+  const liveContentClass = sender === 'user' ? 'bubble markdown-body' : 'bubble ai-message-content markdown-body';
   const createdAt = Date.now() / 1000;
   const senderLine = crMsgSenderLineHtml(sender, name, id, { id, sender, created_at: createdAt }, { tts: false });
 
@@ -5641,10 +5747,50 @@ document.getElementById('settingsOverlay').addEventListener('click', (e) => {
 //  侧栏
 // ══════════════════════════════════════════════════
 
-function openSidebar() { sidebar.classList.add('open'); backdrop.classList.add('active'); }
-function closeSidebar() { sidebar.classList.remove('open'); backdrop.classList.remove('active'); }
-menuBtn.addEventListener('click', openSidebar);
+const sidebarMobile = window.matchMedia('(max-width: 700px)');
+let desktopSidebarHidden = localStorage.getItem('aion_desktop_sidebar_hidden') === '1';
+
+function syncSidebarToggle() {
+  document.body.classList.toggle('desktop-sidebar-hidden', !sidebarMobile.matches && desktopSidebarHidden);
+  const expanded = sidebarMobile.matches ? sidebar.classList.contains('open') : !desktopSidebarHidden;
+  const label = expanded ? '收起聊天室列表' : '展开聊天室列表';
+  if (menuBtn) {
+    menuBtn.setAttribute('aria-expanded', String(expanded));
+    menuBtn.setAttribute('aria-label', label);
+    menuBtn.title = label;
+  }
+}
+
+function toggleSidebar() {
+  if (sidebarMobile.matches) {
+    if (sidebar.classList.contains('open')) closeSidebar();
+    else openSidebar();
+    return;
+  }
+  desktopSidebarHidden = !desktopSidebarHidden;
+  localStorage.setItem('aion_desktop_sidebar_hidden', desktopSidebarHidden ? '1' : '0');
+  syncSidebarToggle();
+}
+
+function openSidebar() {
+  sidebar.classList.add('open');
+  backdrop.classList.add('active');
+  syncSidebarToggle();
+}
+
+function closeSidebar() {
+  sidebar.classList.remove('open');
+  backdrop.classList.remove('active');
+  syncSidebarToggle();
+}
+
+menuBtn.addEventListener('click', toggleSidebar);
 backdrop.addEventListener('click', closeSidebar);
+sidebarMobile.addEventListener('change', () => {
+  closeSidebar();
+  syncSidebarToggle();
+});
+syncSidebarToggle();
 
 // ══════════════════════════════════════════════════
 //  导航
