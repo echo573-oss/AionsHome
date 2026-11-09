@@ -2386,3 +2386,36 @@ body[data-theme="light"] .lounge-report-card { background: var(--surface); }
   .sidebar-shortcut-grid { gap: 6px; }
   .sidebar-shortcut-grid > button { min-height: 36px; padding: 6px 8px; }
 }
+
+/* Sidebar round two: quieter actions, clearer history. */
+.sidebar-header { padding: 14px 16px 12px; gap: 8px; }
+.sidebar-header button:first-child {
+  min-height: 46px;
+  border-radius: 12px;
+  font-size: 14px;
+  background: linear-gradient(135deg, rgba(74, 79, 126, .90), rgba(61, 48, 92, .84));
+  border-color: rgba(166, 165, 218, .28);
+  color: var(--text);
+  box-shadow: 0 4px 14px rgba(16, 20, 57, .15), inset 0 1px 0 rgba(255,255,255,.10);
+}
+.sidebar-header button:first-child:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.conv-list::before { font-size: 12px; font-weight: 600; letter-spacing: .04em; padding: 4px 6px 9px; }
+.conv-item { margin-bottom: 3px; }
+.conv-item.active::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 6px;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--surface3);
+}
+.conv-count { min-width: 30px; }
+body[data-theme="dark"] .conv-item.active {
+  background: linear-gradient(110deg, rgba(102, 108, 167, .23), rgba(96, 75, 137, .16));
+  border-color: var(--border);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+}
