@@ -82,6 +82,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-tests.ps1
 2. **两个巨型文件**：`routes/chat.py`（约 186 KB、24 个端点）与 `routes/chatroom.py`（约 196 KB、42 个端点）。改动尽量局部化，不要顺手整文件重构。
 3. **行数与 `innerHTML` 计数不是重构依据**：它们只适合用来找审查重点，不能单独决定重构范围。
 
+4. **主工作区会被并行会话写入**：仓库同时存在设计工作树（`D:\AionsHome-design`）与 Codex 工作树，
+   前端改版曾直接写进主工作区的 `aion-chat/static/` 与 `public/`。
+   提交前务必 `git status` 逐文件核对并**按路径显式 `git add`**，不要用 `git add -A`——
+   否则会把别人还没完工的在制品裹进你的提交。推送前用 `git add -A --dry-run` 看清楚将要入暂存区的每个文件。
+
 ## 当前不要做的三件事
 
 1. **不要把 `vendor/` 移出 git**。离线安装依赖它；要先有替代离线包，并在干净的 Windows 环境完成一次断网安装验证。
