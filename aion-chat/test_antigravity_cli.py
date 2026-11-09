@@ -82,6 +82,11 @@ class AntigravityProfileTests(unittest.TestCase):
             self.assertEqual(result['decision'], 'allow')
             self.assertTrue(result['allowTool'])
             self.assertEqual(antigravity_image_hook.image_permission_decision(call, [])['decision'], 'deny')
+            call_read = {'toolCall': {'name': 'read_file', 'args': {'Path': image}}}
+            result_read = antigravity_image_hook.image_permission_decision(call_read, [image])
+            self.assertEqual(result_read['decision'], 'allow')
+            self.assertTrue(result_read['allowTool'])
+            self.assertEqual(antigravity_image_hook.image_permission_decision(call_read, [])['decision'], 'deny')
             call['toolCall']['name'] = 'run_command'
             self.assertEqual(antigravity_image_hook.image_permission_decision(call, [image])['decision'], 'deny')
 
@@ -447,6 +452,57 @@ class AntigravityStreamTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(staged.exists())
             self.assertFalse((workspace / '.agents/image-input.json').exists())
             self.assertTrue(source.exists())
+
+    async def test_image_turn_accepts_workspace_relative_read_file_path(self):
+        # AGY 进程的工作目录是 AGY 工作区，它可能用相对路径回报读图动作；
+        # 守卫必须按工作区解析，否则永远判成"未授权"并中止整轮。
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory) / 'workspace'
+            source = Path(directory) / '原图.png'
+            original = make_image(source)
+
+            async def spawn(*command, **kwargs):
+                staged = next((workspace / 'images').rglob('*.png'))
+                relative = staged.relative_to(workspace).as_posix()
+                process = FakeProcess([
+                    {'event': 'init', 'init': {'agent': 'home-companion-vision'}},
+                    {'event': 'step_update', 'step_update': {'step_type': 'tool', 'tool_name': 'read_file',
+                        'tool_info': {'name': 'read_file', 'parameters': {'Path': relative}, 'output': 'image'}}},
+                    {'event': 'result', 'result': {'status': 'SUCCESS', 'response': '红色圆形'}},
+                ])
+                processes.append((process, staged))
+                return process
+
+            processes = []
+            with patch.object(agy.asyncio, 'create_subprocess_exec', spawn):
+                events = [event async for event in agy.stream_chat(
+                    'agy.exe', '这张是什么？', 'test-model', workspace, image_paths=(str(source),))]
+            self.assertEqual(events[-2]['text'], '红色圆形')
+
+    async def test_image_turn_still_rejects_paths_outside_staged_attachments(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory) / 'workspace'
+            source = Path(directory) / '原图.png'
+            make_image(source)
+            outside = Path(directory) / '别的文件.txt'
+            outside.write_text('x', encoding='utf-8')
+
+            async def spawn(*command, **kwargs):
+                process = FakeProcess([
+                    {'event': 'init', 'init': {'agent': 'home-companion-vision'}},
+                    {'event': 'step_update', 'step_update': {'step_type': 'tool', 'tool_name': 'read_file',
+                        'tool_info': {'name': 'read_file', 'parameters': {'Path': str(outside)}, 'output': 'x'}}},
+                    {'event': 'result', 'result': {'status': 'SUCCESS', 'response': '不该到这里'}},
+                ])
+                processes.append(process)
+                return process
+
+            processes = []
+            with patch.object(agy.asyncio, 'create_subprocess_exec', spawn):
+                with self.assertRaises(agy.AntigravityError) as caught:
+                    [event async for event in agy.stream_chat(
+                        'agy.exe', '这张是什么？', 'test-model', workspace, image_paths=(str(source),))]
+            self.assertIn('未授权的原生工具调用', str(caught.exception))
 
     async def test_voice_files_reach_only_gemini_with_message_association(self):
         import ai_providers

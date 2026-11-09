@@ -11,9 +11,11 @@ from pathlib import Path
 
 def image_permission_decision(event, image_paths):
     call = event.get('toolCall') or {}
-    path = (call.get('args') or {}).get('AbsolutePath')
+    args = call.get('args') or {}
+    path = args.get('AbsolutePath') or args.get('Path') or args.get('path') or args.get('file_path') or ''
+    name = call.get('name')
     allowed = {os.path.normcase(str(Path(item).resolve())) for item in image_paths}
-    if call.get('name') == 'view_file' and isinstance(path, str) and path:
+    if name in ('view_file', 'read_file') and isinstance(path, str) and path:
         if os.path.normcase(str(Path(path).resolve())) in allowed:
             # CLI 1.2.16 still consumes the legacy allowTool/denyReason fields.
             return {'decision': 'allow', 'allowTool': True}

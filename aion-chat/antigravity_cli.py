@@ -183,6 +183,18 @@ async def _read_stderr(reader):
     return tail.decode('utf-8', errors='replace').strip()
 
 
+def _resolve_agent_path(raw, workspace) -> str:
+    """把 AGY 报上来的路径解析成可比较的绝对路径。
+
+    AGY 进程的工作目录是 AGY 工作区，它给的相对路径要按工作区解析；
+    直接 Path(path).resolve() 会落到服务进程自己的 cwd，永远对不上暂存附件。
+    """
+    candidate = Path(str(raw))
+    if not candidate.is_absolute():
+        candidate = Path(workspace) / candidate
+    return os.path.normcase(str(candidate.resolve()))
+
+
 def _stage_image(source, target):
     """Decode attachments before sending; salvage JPEGs missing their end marker."""
     from PIL import Image
@@ -298,9 +310,11 @@ async def _stream_chat(binary, prompt, model, workspace, timeout, *, agent=AGENT
                             if step.get('step_type') == 'tool' or step.get('tool_info'):
                                 info = step.get('tool_info') or {}
                                 name = step.get('tool_name') or info.get('name')
-                                path = (info.get('parameters') or {}).get('AbsolutePath', '')
-                                allowed = {os.path.normcase(str(Path(item).resolve())) for item in attachment_paths}
-                                if name != 'view_file' or not path or os.path.normcase(str(Path(path).resolve())) not in allowed:
+                                params = info.get('parameters') or {}
+                                path = params.get('AbsolutePath') or params.get('Path') or params.get('path') or params.get('file_path') or ''
+                                allowed = {_resolve_agent_path(item, workspace) for item in attachment_paths}
+                                if (name not in ('view_file', 'read_file') or not path
+                                        or _resolve_agent_path(path, workspace) not in allowed):
                                     raise AntigravityError('AGY 陪伴模式出现未授权的原生工具调用，已停止：' + (name or 'unknown'))
                                 if info.get('error'):
                                     raise AntigravityError('AGY 附件读取失败：' + str(info['error'].get('message', info['error'])))
