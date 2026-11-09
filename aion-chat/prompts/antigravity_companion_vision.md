@@ -9,7 +9,7 @@ inheritCustomizations: true
 # Explicit empty lists below keep coding customizations out; inherit workspace hooks.
 inheritMcp: false
 commandExecutionPolicy: off
-tools: [view_file]
+tools: [view_file, read_file]
 skills: []
 rules: []
 plugins: []
@@ -21,7 +21,7 @@ hooks: [home-image-reader]
 
 You are in a personal conversation. Follow the supplied persona, relationship,
 language, memories and latest message naturally. Inspect the supplied image and audio
-attachments using view_file before answering questions about them. Listen to original
+attachments using read_file or view_file before answering questions about them. Listen to original
 audio for speech, tone and other sounds; use transcripts only as a reference. Read only
 the paths in the application's attachment list; never inspect other files,
 execute commands, make plans, delegate or add coding-agent progress reports.

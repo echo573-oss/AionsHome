@@ -82,6 +82,11 @@ class AntigravityProfileTests(unittest.TestCase):
             self.assertEqual(result['decision'], 'allow')
             self.assertTrue(result['allowTool'])
             self.assertEqual(antigravity_image_hook.image_permission_decision(call, [])['decision'], 'deny')
+            call_read = {'toolCall': {'name': 'read_file', 'args': {'Path': image}}}
+            result_read = antigravity_image_hook.image_permission_decision(call_read, [image])
+            self.assertEqual(result_read['decision'], 'allow')
+            self.assertTrue(result_read['allowTool'])
+            self.assertEqual(antigravity_image_hook.image_permission_decision(call_read, [])['decision'], 'deny')
             call['toolCall']['name'] = 'run_command'
             self.assertEqual(antigravity_image_hook.image_permission_decision(call, [image])['decision'], 'deny')
 
@@ -425,7 +430,7 @@ class AntigravityStreamTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(staged.read_bytes(), original)
                 self.assertEqual(command[command.index('--agent') + 1], 'home-companion-vision')
                 profile = workspace / '.agents/agents/home-companion-vision.md'
-                self.assertIn('tools: [view_file]', profile.read_text(encoding='utf-8'))
+                self.assertIn('tools: [view_file, read_file]', profile.read_text(encoding='utf-8'))
                 self.assertEqual(json.loads((workspace / '.agents/image-input.json').read_text(encoding='utf-8')), [str(staged)])
                 process = FakeProcess([
                     {'event': 'init', 'init': {'agent': 'home-companion-vision'}},
