@@ -1558,12 +1558,13 @@ body[data-theme="light"] .monitor-camera-snapshot summary {
   z-index: 520;
   align-items: center;
   justify-content: center;
-  background: rgba(0,0,0,0.55);
-  padding: 18px;
+  background: rgba(0,0,0,0.6);
+  padding: 0;
 }
 .cr-syslog-overlay.show { display: flex; }
 .cr-syslog-modal {
   width: min(1100px, 96vw);
+  max-width: 1100px;
   height: min(92vh, 900px);
   max-height: 92vh;
   display: flex;
@@ -1571,12 +1572,17 @@ body[data-theme="light"] .monitor-camera-snapshot summary {
   overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 18px 48px rgba(0,0,0,0.35);
+  border-radius: 18px;
+  padding: 20px;
+  box-shadow: var(--soft-shadow), inset 0 1px 0 rgba(255,255,255,0.12);
+  backdrop-filter: blur(22px) saturate(1.35);
+  -webkit-backdrop-filter: blur(22px) saturate(1.35);
 }
-.cr-syslog-modal h3 { margin: 0 0 8px; font-size: 17px; }
-.cr-syslog-count { font-size: 11px; color: var(--text3); margin-bottom: 6px; }
+@media (orientation: portrait) and (min-height: 950px) {
+  .cr-syslog-modal { height: 94vh; max-height: 94vh; height: 94dvh; max-height: 94dvh; }
+}
+.cr-syslog-modal h3 { margin: 0 0 16px; font-size: 18px; }
+.cr-syslog-count { font-size: 11px; color: var(--text3); margin-bottom: 4px; }
 .cr-syslog-list {
   flex: 1 1 auto;
   min-height: 0;
@@ -1598,8 +1604,8 @@ body[data-theme="light"] .monitor-camera-snapshot summary {
 .cr-syslog-tokens .tok-value { color: var(--text); font-weight: 500; margin-right: 8px; }
 .cr-syslog-tokens .tok-thinking { color: #ff9800; }
 .cr-syslog-tokens .tok-cached { color: #4caf50; }
-.cr-syslog-mem { color: #60a5fa; }
-.cr-syslog-mem.none { color: var(--text3); opacity: 0.65; }
+.cr-syslog-mem { color: #1a73e8; }
+.cr-syslog-mem.none { color: var(--text3); opacity: 0.5; }
 .ambient-log-status { font-weight: 700; margin-right: 8px; }
 .ambient-log-status.wake { color: #4caf50; }
 .ambient-log-status.reject { color: #ff9800; }
@@ -1622,12 +1628,20 @@ body[data-theme="light"] .monitor-camera-snapshot summary {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface2);
-  padding: 8px;
+  padding: 10px;
   font-size: 11px;
   overflow: visible;
 }
 .cr-syslog-detail.show { display: block; }
-.cr-syslog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.cr-syslog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+/* 底栏按钮对齐私聊页：自然宽度右对齐，而不是等分铺满整行 */
+.cr-syslog-actions .transfer-btn-cancel {
+  flex: 0 0 auto;
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 400;
+}
 .cr-syslog-token-raw { margin-top: 4px; font-size: 11px; color: var(--text2); line-height: 1.5; }
 .cr-syslog-token-raw span { margin-right: 10px; }
 .cr-syslog-token-raw .tok-label { color: var(--text3); }
