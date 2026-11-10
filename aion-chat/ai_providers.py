@@ -13,8 +13,10 @@ from system_logs import logged_ai_call, record_cli_prompt, record_sent_messages
 from context_blocks import (
     CTX_RUNTIME,
     DATA_KINDS,
+    DATA_NOTICE,
     INSTRUCTION_KINDS,
     STATE_KINDS,
+    STATE_NOTICE,
     context_kind,
     context_message,
     is_data_message,
@@ -905,6 +907,37 @@ def _strip_replacement_chars(text: str) -> str:
     return text.replace("\ufffd", "")
 
 
+def _split_channel_notice(chunk: str) -> tuple[str, str]:
+    """拆出通道说明头（``[当前状态]`` / ``[参考资料]``）与正文。
+
+    ``context_message()`` 会给每条通道消息都加一遍说明头；同一通道有多条
+    消息时（例如日程、位置、设备状态各一条），拼进 CLI prompt 后说明头会
+    重复出现多次——纯噪声，白烧 token 也干扰模型。
+    """
+    text = str(chunk or "")
+    for notice in (STATE_NOTICE, DATA_NOTICE):
+        if text.startswith(notice):
+            return notice, text[len(notice):].lstrip("\n")
+    return "", text
+
+
+def _join_channel_chunks(chunks: list[str]) -> str:
+    """拼接同一通道的多条消息，说明头只保留一次。"""
+    kept_notice = ""
+    bodies = []
+    for chunk in chunks or []:
+        if not chunk or not chunk.strip():
+            continue
+        notice, body = _split_channel_notice(chunk)
+        if notice and not kept_notice:
+            kept_notice = notice
+        bodies.append(body if body.strip() else chunk.strip())
+    if not bodies:
+        return ""
+    joined = "\n\n".join(bodies)
+    return f"{kept_notice}\n{joined}" if kept_notice else joined
+
+
 def _build_cli_prompt(
     messages: list,
     *,
@@ -1034,11 +1067,11 @@ def _build_cli_prompt(
     if instruction_text:
         parts.append(f"[System Instruction]\n{instruction_text}")
     # 状态通道：当前时间、日程、位置、设备状态——是事实，不是指令
-    state_text = "\n\n".join(chunk for chunk in state_chunks if chunk)
+    state_text = _join_channel_chunks(state_chunks)
     if state_text:
         parts.append(f"[Current State]\n{state_text}")
     # 资料通道：记忆与外部资料，明确标注为背景数据而不是指令
-    data_text = "\n\n".join(chunk for chunk in data_chunks if chunk)
+    data_text = _join_channel_chunks(data_chunks)
     if data_text:
         parts.append(f"[Reference Data]\n{data_text}")
     for role, text in merged:

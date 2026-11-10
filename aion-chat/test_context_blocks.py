@@ -177,6 +177,33 @@ class CliPromptRenderingTest(unittest.TestCase):
         self.assertIn("[User]\n你好", prompt)
         self.assertTrue(prompt.rstrip().endswith("[Assistant]"))
 
+    def test_channel_notice_appears_once_per_channel(self):
+        """同一通道有多条消息时，通道说明头只保留一次。
+
+        context_message() 给每条通道消息都加一遍说明头；日程、位置、设备
+        状态各一条时，CLI prompt 里就会连着出现三遍 [当前状态]。同理，
+        资料通道的近期生活、背景记忆、相关记忆会带三遍 [参考资料]。
+        """
+        prompt = ai_providers._build_cli_prompt([
+            {"role": "system", "content": "persona", "_ctx": CTX_PERSONA},
+            context_message(CTX_RUNTIME, "【设备当前状态】\n电脑：刚刚有键鼠输入。"),
+            context_message(CTX_RUNTIME, "【位置信息】\n在家。"),
+            context_message(CTX_RUNTIME, "系统当前的准确时间是 12:00"),
+            context_message(CTX_EXTERNAL, "近期生活与待办。"),
+            context_message(CTX_MEMORY, "[背景记忆]\n旧事"),
+            context_message(CTX_MEMORY, "[相关记忆]\n相关事"),
+            {"role": "user", "content": "你好"},
+        ])
+        self.assertEqual(1, prompt.count("[当前状态]"))
+        self.assertEqual(1, prompt.count("[参考资料]"))
+        # 正文一条都不能少
+        self.assertIn("【设备当前状态】\n电脑：刚刚有键鼠输入。", prompt)
+        self.assertIn("【位置信息】\n在家。", prompt)
+        self.assertIn("系统当前的准确时间是 12:00", prompt)
+        self.assertIn("近期生活与待办。", prompt)
+        self.assertIn("[背景记忆]\n旧事", prompt)
+        self.assertIn("[相关记忆]\n相关事", prompt)
+
     def test_reference_data_section_is_omitted_without_data(self):
         prompt = ai_providers._build_cli_prompt([
             {"role": "system", "content": "persona"},
