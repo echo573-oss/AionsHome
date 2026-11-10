@@ -1,5 +1,6 @@
 import json
 import asyncio
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -43,20 +44,61 @@ class SystemLogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(entry["prompt_messages"][0]["content"], "wake up")
 
     async def test_persistence_retention_and_chat_details_share_one_entry(self):
-        for i in range(35):
+        self.assertEqual(system_logs.LIMIT, 100)
+        for i in range(105):
             system_logs.save_log({"log_id": str(i), "started_at": i, "status": "success"})
         entries = system_logs.list_logs()
-        self.assertEqual(len(entries), 30)
-        self.assertEqual([entries[0]["log_id"], entries[-1]["log_id"]], ["34", "5"])
-        system_logs.enrich_debug({"usage": {"system_log_id": "34"}, "recall_topic": "wake"})
+        self.assertEqual(len(entries), 100)
+        self.assertEqual([entries[0]["log_id"], entries[-1]["log_id"]], ["104", "5"])
+        system_logs.enrich_debug({"usage": {"system_log_id": "104"}, "recall_topic": "wake"})
         app = FastAPI()
         app.include_router(system_logs.router)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             entries = (await client.get("/api/system-logs")).json()
-            self.assertEqual(len(entries), 30)
+            self.assertEqual(len(entries), 100)
             self.assertEqual(entries[0]["recall_topic"], "wake")
             self.assertEqual((await client.delete("/api/system-logs")).status_code, 200)
             self.assertEqual((await client.get("/api/system-logs")).json(), [])
+
+    async def test_retention_is_grouped_per_room(self):
+        for i in range(105):
+            system_logs.save_log({"log_id": f"p{i}", "started_at": i, "status": "success"})
+        for i in range(105):
+            system_logs.save_log({"log_id": f"r{i}", "room_id": "r1", "started_at": 1000 + i, "status": "success"})
+        with system_logs._connect() as db:
+            total = db.execute("SELECT COUNT(*) FROM logs").fetchone()[0]
+        self.assertEqual(total, 200)
+        room = system_logs.list_logs("r1")
+        self.assertEqual(len(room), 100)
+        self.assertEqual([room[0]["log_id"], room[-1]["log_id"]], ["r104", "r5"])
+        everything = system_logs.list_logs()
+        self.assertEqual(len(everything), 100)
+        self.assertEqual(everything[0]["log_id"], "r104")
+
+    async def test_legacy_table_gains_room_column_and_backfills(self):
+        legacy = Path(tempfile.mkdtemp()) / "legacy.db"
+        con = sqlite3.connect(legacy)
+        con.execute("CREATE TABLE logs (id TEXT PRIMARY KEY, started REAL, payload TEXT)")
+        con.execute("INSERT INTO logs VALUES (?,?,?)",
+                    ("old1", 1, json.dumps({"log_id": "old1", "room_id": "r9", "started_at": 1})))
+        con.execute("INSERT INTO logs VALUES (?,?,?)",
+                    ("old2", 2, json.dumps({"log_id": "old2", "started_at": 2})))
+        con.commit()
+        con.close()
+        with patch.object(system_logs, "LOG_DB_PATH", legacy):
+            self.assertEqual([e["log_id"] for e in system_logs.list_logs("r9")], ["old1"])
+            self.assertEqual([e["log_id"] for e in system_logs.list_logs()], ["old2", "old1"])
+        with sqlite3.connect(legacy) as con:
+            columns = [row[1] for row in con.execute("PRAGMA table_info(logs)")]
+        self.assertIn("room", columns)
+
+    async def test_enrich_debug_keeps_room_column_in_sync(self):
+        system_logs.save_log({"log_id": "x1", "started_at": 1, "room_id": "r1", "status": "success"})
+        system_logs.enrich_debug({"usage": {"system_log_id": "x1"}, "recall_topic": "wake"})
+        with system_logs._connect() as db:
+            room = db.execute("SELECT room FROM logs WHERE id = 'x1'").fetchone()[0]
+        self.assertEqual(room, "r1")
+        self.assertEqual(system_logs.list_logs("r1")[0]["recall_topic"], "wake")
 
     async def test_room_keeps_each_kitchen_call_and_enrichment_preserves_dispatched_prompts(self):
         import kitchen_chat

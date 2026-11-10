@@ -46,7 +46,7 @@ const _securityAlertUi = import('/static/security-alert.js')
 let pendingAttachments = [];  // [{url, type, name}]
 let worldBook = { ai_persona: "", user_persona: "", ai_name: "AI", user_name: "你" };
 let msgDebugData = {};  // { msgId: { model, recalled_memories, prompt_messages, prompt_count, usage } }
-let systemLogs = [];    // 服务端持久保留最近 30 条 AI 调用
+let systemLogs = [];    // 服务端持久保留最近 100 条 AI 调用
 let msgMusicCards = {}; // { msgId: [{ id, name, artist, album, cover, audio_url, candidates }] }
 let hasMoreMessages = false;   // 是否还有更早的消息可加载
 let loadingMore = false;       // 防止重复加载
@@ -2380,7 +2380,7 @@ async function loadSystemLogs() {
     try {
       const local = JSON.parse(localStorage.getItem('aion_system_log_errors_v1') || '[]');
       if (Array.isArray(local)) {
-        for (const d of local.slice(0, 30).reverse()) {
+        for (const d of local.slice(0, 100).reverse()) {
           if (d && typeof d === 'object') addSystemLog(d);
         }
       }
@@ -2416,7 +2416,7 @@ function addSystemLog(d) {
   if (index >= 0) systemLogs.splice(index, 1);
   systemLogs.unshift(item);
   systemLogs.sort((a, b) => b.started_at - a.started_at);
-  systemLogs = systemLogs.slice(0, 30);
+  systemLogs = systemLogs.slice(0, 100);
   saveLocalSystemLogs();
   // 如果是错误日志，闪烁系统日志按钮
   if (d.has_error) {
@@ -2580,7 +2580,7 @@ function renderSystemLogList() {
   const el = $("sysLogList");
   const countEl = $("sysLogCount");
   if (!el) return;
-  if (countEl) countEl.textContent = `共 ${systemLogs.length} 条（保留最近 30 条）`;
+  if (countEl) countEl.textContent = `共 ${systemLogs.length} 条（保留最近 100 条）`;
   if (systemLogs.length === 0) {
     el.innerHTML = '<div class="syslog-empty">暂无日志</div>';
     return;

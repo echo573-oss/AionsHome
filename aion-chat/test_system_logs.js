@@ -14,13 +14,13 @@ function page(api = async () => [], storage = new Map()) {
   return context;
 }
 
-test('keeps the latest 30 entries and merges the same call from two channels', () => {
+test('keeps the latest 100 entries and merges the same call from two channels', () => {
   const p = page();
-  for (let i = 0; i < 35; i++) p.addSystemLog({ log_id: `call${i}`, model: 'test', started_at: i + 1 });
-  assert.equal(p.systemLogs.length, 30);
-  assert.equal(p.systemLogs[0].log_id, 'call34');
-  p.addSystemLog({ log_id: 'call34', msg_id: 'message1', recall_topic: 'test' });
-  assert.equal(p.systemLogs.length, 30);
+  for (let i = 0; i < 105; i++) p.addSystemLog({ log_id: `call${i}`, model: 'test', started_at: i + 1 });
+  assert.equal(p.systemLogs.length, 100);
+  assert.equal(p.systemLogs[0].log_id, 'call104');
+  p.addSystemLog({ log_id: 'call104', msg_id: 'message1', recall_topic: 'test' });
+  assert.equal(p.systemLogs.length, 100);
   assert.equal(p.systemLogs[0].recall_topic, 'test');
 });
 

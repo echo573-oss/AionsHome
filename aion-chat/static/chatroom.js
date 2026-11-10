@@ -1935,7 +1935,7 @@ function crAddSystemLog(d, live = true) {
   if (index >= 0) crSystemLogs.splice(index,1);
   crSystemLogs.unshift(item);
   crSystemLogs.sort((a,b) => b.started_at-a.started_at);
-  crSystemLogs = crSystemLogs.slice(0,30);
+  crSystemLogs = crSystemLogs.slice(0,100);
   if (live && d.has_error) {
     crSysLogHasUnreadError = true;
     document.getElementById('crSysLogBtn')?.classList.add('cr-syslog-btn-flash');

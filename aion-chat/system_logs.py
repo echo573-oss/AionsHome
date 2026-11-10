@@ -16,7 +16,7 @@ from fastapi import APIRouter
 from config import BASE_DIR, DB_PATH
 
 LOG_DB_PATH = DB_PATH.with_name("system_logs.db")
-LIMIT = 30
+LIMIT = 100          # 每个分组各自保留的日志条数（私聊一组，每个聊天室房间各一组）
 log = logging.getLogger(__name__)
 _active_call = ContextVar("system_log_call", default=None)
 router = APIRouter()
@@ -28,23 +28,52 @@ def _connect():
     try:
         with db:
             db.execute("CREATE TABLE IF NOT EXISTS logs (id TEXT PRIMARY KEY, started REAL, payload TEXT)")
+            _ensure_room_column(db)
             yield db
     finally:
         db.close()
 
 
+def _ensure_room_column(db):
+    """幂等迁移：把 room_id 提成独立列。
+
+    分组裁剪要按 room 分组，若每次都从 payload 里 json_extract，就得把每行
+    上万字节的 prompt 全文解析一遍（实测 400 行约 23ms/次，落在每次 AI 调用上）。
+    独立列 + 索引后裁剪只扫小字段，开销可以忽略。
+    """
+    columns = {row[1] for row in db.execute("PRAGMA table_info(logs)")}
+    if "room" in columns:
+        return
+    db.execute("ALTER TABLE logs ADD COLUMN room TEXT")
+    db.execute("UPDATE logs SET room = json_extract(payload, '$.room_id')")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_logs_room_started ON logs(room, started DESC)")
+
+
 def save_log(entry):
     with _connect() as db:
-        db.execute("INSERT OR REPLACE INTO logs VALUES (?, ?, ?)",
-                   (entry["log_id"], entry["started_at"], json.dumps(entry, ensure_ascii=False, default=str)))
-        db.execute("DELETE FROM logs WHERE id NOT IN (SELECT id FROM logs ORDER BY started DESC LIMIT ?)", (LIMIT,))
+        db.execute("INSERT OR REPLACE INTO logs (id, started, payload, room) VALUES (?, ?, ?, ?)",
+                   (entry["log_id"], entry["started_at"], json.dumps(entry, ensure_ascii=False, default=str),
+                    entry.get("room_id")))
+        # 按 room 分组裁剪：私聊（room 为空）一组，每个聊天室房间各一组，
+        # 每组各自保留最近 LIMIT 条，互不挤占。
+        db.execute(
+            "DELETE FROM logs WHERE id NOT IN ("
+            "  SELECT id FROM ("
+            "    SELECT id, ROW_NUMBER() OVER ("
+            "      PARTITION BY room ORDER BY started DESC"
+            "    ) AS rn FROM logs"
+            "  ) WHERE rn <= ?)", (LIMIT,))
 
 
 @router.get("/api/system-logs")
 def list_logs(room_id: str | None = None):
+    """带 room_id 时返回该房间最近 LIMIT 条；不带时返回全局最近 LIMIT 条。"""
     with _connect() as db:
-        rows = db.execute("SELECT payload FROM logs WHERE (? IS NULL OR json_extract(payload,'$.room_id')=?) "
-                          "ORDER BY started DESC LIMIT ?", (room_id, room_id, LIMIT))
+        if room_id is None:
+            rows = db.execute("SELECT payload FROM logs ORDER BY started DESC LIMIT ?", (LIMIT,))
+        else:
+            rows = db.execute("SELECT payload FROM logs WHERE room=? "
+                              "ORDER BY started DESC LIMIT ?", (room_id, LIMIT))
         return [json.loads(row[0]) for row in rows]
 
 
@@ -71,8 +100,8 @@ def enrich_debug(data):
             entry["usage"] = saved["usage"]
         if "model" in saved:
             entry["model"] = saved["model"]
-        db.execute("UPDATE logs SET payload = ? WHERE id = ?",
-                   (json.dumps(entry, ensure_ascii=False, default=str), log_id))
+        db.execute("UPDATE logs SET payload = ?, room = ? WHERE id = ?",
+                   (json.dumps(entry, ensure_ascii=False, default=str), entry.get("room_id"), log_id))
     return entry
 
 
