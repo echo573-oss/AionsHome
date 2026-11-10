@@ -116,9 +116,56 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-tests.ps1
   都已迁移，不再用 "user(配置) + assistant(收到，我会…)" 的伪对话注入；
   CLI 线路（Gemini / Codex / Antigravity）统一渲染成 `[System Instruction]` / `[Current State]` / `[Reference Data]` 三段。
   新增上下文或新模型线路请复用 `context_blocks.py`，不要再造伪对话对。
-  人设前缀统一走 `context_blocks.build_persona_prefix()`；时间线读法说明走 `context_builder.render_transcript_note()`。
+  人设前缀统一走 `context_blocks.build_persona_prefix()`；时间线读法说明走 `context_builder.render_transcript_note()`
+  —— 它走 `CTX_TRANSCRIPT` 通道并**并进对话段的第一块**，不要退回指令通道：
+  放指令区会隔着状态与资料两整块内容（实测 CLI prompt 里相隔 2005 字符），模型很难把说明和记录对上。
+  说明里也必须写明「历史消息里包含你自己之前说过的内容」——历史消息统一渲染成 user 角色
+  （`context_builder.py` 的 `render_merged_timeline`），只靠说话人区分 AI 自己和用户。
 - **发往供应商前先剥内部元数据**：娱乐室直连 OpenAI 兼容接口，不经过 `build_multimodal_messages` 重建，
   需要自己用 `routes/playground._sanitize_messages()` 过滤 `_ctx` / `_timeline_sender` 这类内部键。
+- **两条线路的技术路线不同（主私聊 vs 聊天室）**，改任一侧前先确认自己在改哪条：
+
+  | | 主私聊（Aion） | 聊天室（Gemini / Connor） |
+  | --- | --- | --- |
+  | 当前模型 | `Codex-5.6-Sol`（会话级可切 `ChatGPT-5.6-Sol`） | `AGY · Gemini 4 Argon (Low)`（`chatroom_config.json` 的 `connor_model`） |
+  | provider | `codex_cli` / `siwc` | `antigravity_cli` |
+  | 传输 | 本地 CLI 子进程 / sidecar HTTP | 本地 CLI 子进程（`agy.EXE`） |
+  | 消息形态 | **多条消息**（system / user 分开） | **单条 prompt 灌 stdin**，三通道靠 `[System Instruction]` / `[Current State]` / `[Reference Data]` 标签表达 |
+  | 附件 | base64 或本地路径 | `@绝对路径`，且路径要转正斜杠（Windows 反斜杠 `\u \a \t` 会被误读为转义） |
+
+  影响与坑：
+  - **CLI 只吃一条 prompt**，所以 `_build_cli_prompt()` 必须做「连续同角色合并」，否则出现连续 `[Assistant]` 这种伪 multi-turn。
+  - **Gemini / AGY CLI 会把机器拼的标记当成 agent 工具调用上下文**，触发 thinking 模式输出大段内心戏。
+    图片提示必须伪装成用户对话的自然延续（实测「帮我读一下 xxx.jpg」干净，`[图片附件] xxx` 必触发思考）。
+  - **CLI 的 agent 配置会禁用工具**（`tools: []` / `commandExecutionPolicy: off`），所以 Gemini 只能发文本协议指令
+    （`[MEMORY:]`、`[PAT:]` 等），不能真正调工具。
+  - **安全过滤行为不同**：Gemini 原生过滤会被原样暴露成 `[AntigravityCLI错误]` 段进上下文；
+    Codex 线路没有这一环。报错原文会每轮重复占用 prompt（实测占 30%）。
+  - **设备状态注入次数不同**：主私聊走 `stream_ai()` 的统一入口只注一次；聊天室在组装阶段自己注入，
+    所以「设备状态注入两遍」的 bug 只在聊天室出现。
+  - `routes/chatroom.py::_resolve_connor_model()` 的解析顺序是：请求参数 → `chatroom_config.json` 的 `connor_model`
+    → 第一个 `codex_cli` 模型。函数 docstring 写的「默认走 Codex CLI」只是**兜底**，实际配置会覆盖它。
+  - 两条线路**共享同一个模型池**（`config.MODELS`），只是 provider 不同。
+- **两个 digest 锚点的存储方式不同**：
+
+  | | 主私聊 | 聊天室 |
+  | --- | --- | --- |
+  | 存储 | JSON 文件 `data/digest_anchor.json` | 数据库表 `chatroom_digest_anchors` |
+  | 键 | `last_digest_ts` | `room_id='connor_unified'` |
+  | 读写 | `config.load_digest_anchor()` / `save_digest_anchor()` | 直接查表 / `INSERT OR REPLACE` |
+
+  影响与坑：
+  - **JSON 写入不是原子的**：`save_digest_anchor()` 直接 `write_text`，没有「临时文件 + rename」。
+    进程在写入中途被杀会留下半截 JSON。
+  - **读取时把损坏静默当成「从未总结过」**：`load_digest_anchor()` 的 `except` 吞掉异常返回 `0.0`，
+    而 `0.0` 正是「从未总结过」的语义 —— 结果是**整个 messages 表重新进入 digest 取数范围**
+    （当前约 13791 条），造成大面积重复总结。改这个文件时优先考虑改成原子写，或读取失败时回退到
+    「上次已知的好值」而不是 0.0。
+  - **备份必须成对**：JSON 是 `data/` 下的独立小文件，数据库锚点在 `chat.db` 里。
+    只备份其中一半会让两个锚点错位（一个前进了一个没前进）。
+  - **测试隔离两者都 OK**：`_is_test_process()` 重定向 `DATA_DIR`，JSON 跟着走临时目录；
+    数据库锚点随 `chat.db` 一起进临时库。
+  - **并发写**：JSON 无锁，多进程会互相覆盖；数据库锚点走 sqlite 事务，与记忆写入天然一致。
 - **设备状态只注入一次**：`build_context_segments()` 已把设备状态放进状态通道，
   聊天室再用 `with_current_device_context()` 往指令通道插一次就会重复
   （实测每次调用多拼一遍，白烧 token 且给模型两份同样事实）。
