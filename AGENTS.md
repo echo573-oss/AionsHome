@@ -131,3 +131,38 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-tests.ps1
   `test_link_preview_ui`、`test_memory_count_api`、`test_chat_bubble_style_parity`），
   已逐个在干净 worktree（`git worktree add` 到 HEAD）上复现，**与上下文改动无关**。
   排查失败前先在干净副本上对比，别默认是自己的锅。
+
+### 记忆写入的三条路径与两套锚点（2026-11-09 梳理）
+
+改动记忆库前先认清这几条路径，它们**门槛与锚点各不相同**：
+
+| 路径 | 入口 | 门槛 | 写入哪个表 |
+| --- | --- | --- | --- |
+| 自动 digest（主私聊） | `main._auto_digest_loop` → `memory.auto_digest()` | ≥40 条未总结消息 | `memories` |
+| 自动 digest（聊天室） | `chatroom._connor_1v1_auto_digest_loop` → `digest_chatroom()` | ≥40 条 | `chatroom_memories` |
+| 手动总结 | 记忆库「总结新消息」→ `memory.manual_digest()` | **无限制**（`min_messages=0`） | 同上 |
+| 显式 `[MEMORY:...]` | `capabilities.memory_write` 开关打开后模型自发输出 | 单条即可 | `memories` / `chatroom_memories` |
+
+- **手动总结没有条数门槛**，自动才有；`digest_chatroom()` 内部硬编码了 ≥40 条检查，
+  所以主私聊手动（`manual_digest`）与聊天室手动（`digest_chatroom`）行为不一致。
+- **两套锚点互不相通**：主私聊是 `data/digest_anchor.json`（`last_digest_ts`），
+  聊天室是表 `chatroom_digest_anchors`（`room_id='connor_unified'`）。
+  锚点 = "此时间之前已总结过"，每组成功后推一格，失败则不动。
+  `test_digest_window_scope.py` 刻意锁定了"两个 digest 各用自己的锚点、各扫各的"——这是设计意图，不是缺陷。
+- **显式 `[MEMORY:...]` 原先完全在锚点体系之外**：不推进任何锚点，导致同一段对话被显式写入和 digest 各记一遍。
+  已新增 `memory_write_policy.py` 统一分类（模型可声明 `[MEMORY:长期重要|内容]`，否则按内容判定），
+  并补齐 `source_msg_id` 溯源。
+- **跨通道去重用 `memory_coverage.py`（来源消息 id 重叠，不用向量）**：
+  新表 `memory_message_coverage(owner_id, message_id, memory_id, origin, created_at)`。
+  显式写入登记「触发这轮的用户消息 + AI 回复」两条 id，digest 取数时跳过这些消息；
+  digest 写入后也登记自己的来源，反向同样生效。
+  **粒度是关键**：显式只挂 AI 回复自己那条时命中率仅 1/5，扩到整轮对话后 5/5。
+  判重不要用向量相似度——实测不同事件也有 0.88，真重复只有 0.84，不可分。
+  **两个易错点**：① 主私聊 digest 的消息流混合 `private:` 私聊与 `chatroom:` 群聊，
+  过滤时必须用消息自带的 `_source_id`，统一补前缀会把群聊消息错标；
+  ② Aion 在聊天室写的记忆落**主库**，覆盖登记要记 `OWNER_MAIN` 而不是 `OWNER_SECOND`。
+  覆盖按 owner 隔离是刻意的——两个 AI 各记自己视角，同一条群聊消息两边都会总结。
+- `homecoming/summary_coverage.filter_uncovered()` 是 fail-open 的，且
+  `homecoming_summary_coverage` 表**只在归巢回传流程里才创建**——没用过回传就没有这张表，
+  此时该调用静默放行。判断覆盖机制是否真的生效，要查表是否存在，不能只看代码被调用。
+

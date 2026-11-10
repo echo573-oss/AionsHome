@@ -11,6 +11,11 @@ import aiosqlite, httpx
 from config import get_key, get_sentinel_config, get_embedding_config, load_worldbook, load_digest_anchor, save_digest_anchor, DEFAULT_MODEL
 from database import get_db
 from model_json import extract_json_object
+from memory_coverage import (
+    OWNER_MAIN,
+    filter_uncovered_messages,
+    mark_covered,
+)
 from ws import manager
 from system_logs import logged_ai_call
 
@@ -1233,6 +1238,11 @@ async def _do_digest(min_messages: int = 0, allow_ai_wishes: bool = False) -> di
                 new_msgs, covered_ids = await filter_uncovered(
                     db, "main", new_msgs
                 )
+                # 已被显式记忆覆盖的消息不再重复总结。
+                new_msgs, explicit_covered = await filter_uncovered_messages(
+                    db, OWNER_MAIN, new_msgs, namespace="private",
+                )
+                covered_ids = covered_ids | explicit_covered
     except Exception as e:
         print(f"[digest] 读取待总结消息失败，锚点未变: {type(e).__name__}: {e}")
         return {
@@ -1404,6 +1414,17 @@ async def _do_digest(min_messages: int = 0, allow_ai_wishes: bool = False) -> di
             total_new += 1
             group_created += 1
             all_summaries.append(item["content"])
+            # 登记 digest 已覆盖的来源消息，显式写入可据此避开重复。
+            if item["source_message_ids"]:
+                try:
+                    async with get_db() as cov_db:
+                        await mark_covered(
+                            cov_db, OWNER_MAIN, item["source_message_ids"],
+                            memory_id=mem_id, origin="digest",
+                        )
+                        await cov_db.commit()
+                except Exception as cov_exc:
+                    print(f"[digest] 覆盖登记失败，不影响写入: {type(cov_exc).__name__}")
             try:
                 await manager.broadcast({"type": "memory_added", "data": broadcast_mem})
             except Exception as e:

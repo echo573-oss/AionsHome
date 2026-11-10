@@ -56,6 +56,8 @@ from memory import (
     get_embedding, _pack_embedding, memory_kind_for_type, memory_kind_label,
     _memory_time_payload, instant_digest,
 )
+from memory_write_policy import resolve_memory_kind
+from memory_coverage import OWNER_MAIN, OWNER_SECOND, mark_covered
 from schedule import (
     process_schedule_commands, ALARM_CMD, REMINDER_CMD, MONITOR_CMD,
     SCHEDULE_DEL_CMD, SCHEDULE_LIST_CMD, _parse_dt, _is_schedule_time_stale,
@@ -649,11 +651,24 @@ def _prefix_for_sender(sender: str) -> str:
     return ""
 
 
-async def _save_main_memory_from_chatroom(room_id: str, msg_id: str, content: str) -> dict:
+async def _save_main_memory_from_chatroom(
+    room_id: str,
+    msg_id: str,
+    content: str,
+    memory_kind: str = "daily",
+    source_ids: list[str] | None = None,
+) -> dict:
     """Save an Aion-authored chatroom MEMORY command into the main Aion memory table."""
     mem_now = time.time()
     mem_id = f"mem_{int(mem_now * 1000)}"
     vec = await get_embedding(content)
+    # 主库用 type 表示分类；显式录入不再一律当「长期重要」。
+    mem_type = {"daily": "daily", "long_term": "important", "friend": "friend"}.get(
+        memory_kind, "daily",
+    )
+    source_json = json.dumps(
+        source_ids or [f"chatroom:{msg_id}"], ensure_ascii=False,
+    )
     async with get_db() as mem_db:
         await mem_db.execute(
             "INSERT INTO memories "
@@ -661,24 +676,24 @@ async def _save_main_memory_from_chatroom(room_id: str, msg_id: str, content: st
             "source_start_ts, source_end_ts, unresolved, source_msg_id) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (
-                mem_id, content, "重要事件", mem_now, f"chatroom:{room_id}",
+                mem_id, content, mem_type, mem_now, f"chatroom:{room_id}",
                 _pack_embedding(vec) if vec else None, "", 0.5,
-                None, None, 0, msg_id,
+                None, None, 0, source_json,
             ),
         )
         await mem_db.commit()
     return {
         "id": mem_id,
         "content": content,
-        "type": "重要事件",
+        "type": mem_type,
         "created_at": mem_now,
         "keywords": "",
         "importance": 0.5,
         "source_start_ts": None,
         "source_end_ts": None,
-        "source_msg_id": msg_id,
-        "memory_kind": memory_kind_for_type("重要事件"),
-        "memory_kind_label": memory_kind_label("重要事件"),
+        "source_msg_id": source_json,
+        "memory_kind": memory_kind_for_type(mem_type),
+        "memory_kind_label": memory_kind_label(mem_type),
     }
 
 
@@ -797,6 +812,45 @@ async def _send_private_whisper(who_identity: str, content: str):
         return await _send_connor_private_whisper(content)
     else:
         return await _send_aion_private_whisper(content)
+
+
+async def _register_explicit_memory_coverage(
+    owner_id: str,
+    source_ids,
+    memory_id: str = "",
+) -> None:
+    """登记显式记忆覆盖了哪些消息。失败不影响写入本身。"""
+    try:
+        async with get_db() as db:
+            await mark_covered(db, owner_id, source_ids, memory_id=memory_id, origin="explicit")
+            await db.commit()
+    except Exception as exc:
+        print(f"[CHATROOM_MEMORY] 覆盖登记失败，不影响写入: {type(exc).__name__}")
+
+
+async def _explicit_memory_source_ids(room_id: str, reply_msg_id: str) -> list[str]:
+    """取显式录入这轮对话的来源消息 id。
+
+    显式记忆是对「这一轮」的记录，只挂 AI 回复自己那条不够——digest 生成的
+    记忆引用���的多是用户消息，两边 id 对不上就判不出重复。这里取
+    「触发这轮的用户消息 + AI 回复」，与 digest 的来源集合能够对上。
+    """
+    source_ids = [f"chatroom:{reply_msg_id}"]
+    try:
+        async with get_db() as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                "SELECT id FROM chatroom_messages WHERE room_id=? AND sender='user' "
+                "AND created_at < (SELECT created_at FROM chatroom_messages WHERE id=?) "
+                "ORDER BY created_at DESC LIMIT 1",
+                (room_id, reply_msg_id),
+            )
+            row = await cur.fetchone()
+            if row:
+                source_ids.insert(0, f"chatroom:{row['id']}")
+    except Exception as exc:
+        print(f"[CHATROOM_MEMORY] 取来源消息失败，保留 AI 回复 id: {type(exc).__name__}")
+    return source_ids
 
 
 async def _process_chatroom_commands(
@@ -1080,24 +1134,45 @@ async def _process_chatroom_commands(
             mem_content = mem_content.strip()
             if mem_content:
                 try:
+                    # 显式录入按内容定分类：模型声明的类型优先，否则按内容判定。
+                    mem_kind, mem_content = resolve_memory_kind(
+                        mem_content, user_text=user_text,
+                    )
+                    if not mem_content:
+                        continue
+                    source_ids = await _explicit_memory_source_ids(room_id, msg_id)
+                    source_json = json.dumps(source_ids, ensure_ascii=False)
                     if who_identity == "aion":
-                        mem_data = await _save_main_memory_from_chatroom(room_id, msg_id, mem_content)
+                        mem_data = await _save_main_memory_from_chatroom(
+                            room_id, msg_id, mem_content, memory_kind=mem_kind,
+                            source_ids=source_ids,
+                        )
                         await broadcast_synced(ws_manager, {"type": "memory_added", "data": mem_data})
                         mem_id = mem_data["id"]
                         target_label = f"{who_label}记忆库"
+                        # Aion 的显式记忆落在主库，归属主私聊 digest。
+                        coverage_owner = OWNER_MAIN
                     else:
                         # Connor 的显式记忆始终进入聊天室/Connor 记忆库；群聊中也按 Connor 作用域保存。
                         mem_id = await save_chatroom_memory(
                             room_id=room_id, scope="connor", content=mem_content,
                             keywords="", importance=0.5,
+                            memory_kind=mem_kind,
+                            source_msg_id=source_json,
                         )
                         target_label = f"{who_label}记忆库"
+                        coverage_owner = OWNER_SECOND
+                    # 登记这轮消息已被覆盖，digest 再次取数时跳过，避免同一段对话被记两遍。
+                    await _register_explicit_memory_coverage(
+                        coverage_owner, source_ids, mem_id,
+                    )
                     await _chatroom_sys_msg(room_id, f"💾 {who_label}记住了：{mem_content[:50]}", _q, after_msg_id=msg_id)
                     mr_data = {
                         "type": "memory_record",
                         "msg_id": msg_id,
                         "content": mem_content,
                         "mem_id": mem_id,
+                        "memory_kind": mem_kind,
                         "store": "main" if who_identity == "aion" else "chatroom",
                     }
                     await _q.put(mr_data)

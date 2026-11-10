@@ -729,6 +729,9 @@ async def build_capability_prompt_items(
         abilities.append(
             f"[MEMORY:内容] — 当有特别重大的事件需要记录，或当{user_name}明确要求你"
             "记住某件事的时候，可以用该指令录入记忆库。"
+            "可在内容前用竖线声明分类：[MEMORY:长期重要|内容] 或 [MEMORY:日常|内容]；"
+            "不声明时系统会按内容自动判断，普通日常不要用这条指令，"
+            "日常事件会由记忆总结自动收录。"
         )
 
     if (

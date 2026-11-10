@@ -25,7 +25,9 @@ from cancelled_reply import save_cancelled_replies
 from active_window_state import record_aion_private_active
 from ai_providers import stream_ai, CLI_STATUS_PREFIX, model_chat_idle_timeout
 from kitchen_chat import chat_stream as kitchen_stream, finish_reply as finish_kitchen_reply
-from memory import recall_memories, instant_digest, fetch_source_details, build_surfacing_memories, get_embedding, _pack_embedding, format_recalled_memories_for_prompt
+from memory import recall_memories, instant_digest, fetch_source_details, build_surfacing_memories, get_embedding, _pack_embedding, format_recalled_memories_for_prompt, memory_kind_for_type, memory_kind_label
+from memory_write_policy import resolve_memory_kind
+from memory_coverage import OWNER_MAIN, mark_covered
 from camera import cam, CAM_CHECK_CMD, perform_cam_check, build_monitor_alert_data
 from activity import get_activity_summary_for_prompt, get_user_dynamics_for_prompt
 from message_dedup import build_message_dedupe_key, reserve_message_ingress
@@ -467,10 +469,18 @@ async def _consume_chat_realtime_stream(
     )
 
 
-async def _prepare_private_memory_records(text):
+async def _prepare_private_memory_records(text, user_text=""):
     matches = MEMORY_CMD_PATTERN.findall(text)
-    contents = [match.strip() for match in matches if match.strip()]
-    records = [(content, await get_embedding(content)) for content in contents]
+    records = []
+    for match in matches:
+        raw = match.strip()
+        if not raw:
+            continue
+        # 显式录入按内容定分类：模型声明的类型优先，否则按内容判定。
+        kind, content = resolve_memory_kind(raw, user_text=user_text)
+        if not content:
+            continue
+        records.append((kind, content, await get_embedding(content)))
     return MEMORY_CMD_PATTERN.sub("", text).strip() if matches else text, records
 
 
@@ -492,20 +502,34 @@ async def _insert_private_memory_records(db, conv_id, user_msg_id, ai_msg_id, re
 
     source_json = json.dumps(sources)
     saved = []
-    for content, vector in records:
+    for kind, content, vector in records:
         mem_id = f"mem_{uuid4().hex}"
+        # 主库用 type 表示分类；显式录入不再一律当「长期重要」。
+        mem_type = {"daily": "daily", "long_term": "important", "friend": "friend"}.get(
+            kind, "daily",
+        )
         await db.execute(
             "INSERT INTO memories (id, content, type, created_at, source_conv, embedding, keywords, "
             "importance, source_start_ts, source_end_ts, unresolved, source_msg_id) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (mem_id, content, "重要事件", reply_ts, conv_id, _pack_embedding(vector) if vector else None,
+            (mem_id, content, mem_type, reply_ts, conv_id, _pack_embedding(vector) if vector else None,
              "", 0.5, start_ts, reply_ts, 0, source_json),
         )
         saved.append({
-            "id": mem_id, "content": content, "type": "重要事件", "created_at": reply_ts,
+            "id": mem_id, "content": content, "type": mem_type, "created_at": reply_ts,
             "keywords": "", "importance": 0.5, "source_start_ts": start_ts,
             "source_end_ts": reply_ts, "source_msg_id": source_json,
+            "memory_kind": memory_kind_for_type(mem_type),
+            "memory_kind_label": memory_kind_label(mem_type),
         })
+        # 登记这轮消息已被覆盖，digest 再次取数时跳过，避免同一段对话被记两遍。
+        try:
+            await mark_covered(
+                db, OWNER_MAIN, sources, memory_id=mem_id, origin="explicit",
+                now=reply_ts,
+            )
+        except Exception as cov_exc:
+            print(f"[memory_record] 覆盖登记失败，不影响写入: {type(cov_exc).__name__}")
     return saved
 
 
@@ -2003,7 +2027,9 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
                             from routes.moments import _trigger_ai_replies
                             spawn_generation_task(_trigger_ai_replies(mt_id, exclude_author="aion"))
 
-            full_text, pending_memories = await _prepare_private_memory_records(full_text)
+            full_text, pending_memories = await _prepare_private_memory_records(
+                full_text, user_text=body.content,
+            )
 
             full_text = await _process_wish_commands(
                 full_text,
@@ -2690,7 +2716,9 @@ async def send_message(conv_id: str, body: MsgCreate):
                             spawn_generation_task(_trigger_ai_replies(mt_id, exclude_author="aion"))
 
             # 检测 [MEMORY:xxx] 记忆录入指令
-            full_text, pending_memories = await _prepare_private_memory_records(full_text)
+            full_text, pending_memories = await _prepare_private_memory_records(
+                full_text, user_text=body.content,
+            )
 
             full_text = await _process_wish_commands(
                 full_text,
@@ -4165,7 +4193,9 @@ async def regenerate_message(conv_id: str, context_limit: int = 30, whisper_mode
                             spawn_generation_task(_trigger_ai_replies(mt_id, exclude_author="aion"))
 
             # 检测 [MEMORY:xxx] 记忆录入指令
-            full_text, pending_memories = await _prepare_private_memory_records(full_text)
+            full_text, pending_memories = await _prepare_private_memory_records(
+                full_text, user_text=lounge_request_text,
+            )
 
             full_text = await _process_wish_commands(
                 full_text,

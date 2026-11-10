@@ -16,6 +16,11 @@ from memory import (
     get_embedding, cosine_similarity, _pack_embedding, _unpack_embedding, _keyword_match_score,
     _memory_time_payload, _format_raw_evidence_block,
 )
+from memory_coverage import (
+    OWNER_SECOND,
+    filter_uncovered_messages as _filter_uncovered_messages,
+    mark_covered,
+)
 from ai_providers import (
     CLI_STATUS_PREFIX,
     _build_cli_prompt,
@@ -807,6 +812,11 @@ async def digest_chatroom(room_id: str = None, model_key: str = None, allow_ai_w
                 msgs, covered_ids = await filter_uncovered(
                     db, "second", msgs
                 )
+                # 已被显式记忆覆盖的消息不再重复总结。
+                msgs, explicit_covered = await _filter_uncovered_messages(
+                    db, OWNER_SECOND, msgs, namespace="chatroom",
+                )
+                covered_ids = covered_ids | explicit_covered
     except Exception as e:
         print(f"[chatroom_digest] 读取待总结消息失败，锚点未变: {type(e).__name__}: {e}")
         return {
@@ -943,6 +953,17 @@ async def digest_chatroom(room_id: str = None, model_key: str = None, allow_ai_w
                 total_new += 1
                 group_created += 1
                 all_summaries.append(item["content"])
+                # 登记 digest 已覆盖的来源消息，显式写入可据此避开重复。
+                if item["source_message_ids"]:
+                    try:
+                        async with get_db() as cov_db:
+                            await mark_covered(
+                                cov_db, OWNER_SECOND, item["source_message_ids"],
+                                memory_id=mem_id, origin="digest",
+                            )
+                            await cov_db.commit()
+                    except Exception as cov_exc:
+                        print(f"[chatroom_digest] 覆盖登记失败，不影响写入: {type(cov_exc).__name__}")
                 await asyncio.sleep(0.001)
 
         if group_failed:
