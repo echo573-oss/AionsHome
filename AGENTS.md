@@ -119,6 +119,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-tests.ps1
   人设前缀统一走 `context_blocks.build_persona_prefix()`；时间线读法说明走 `context_builder.render_transcript_note()`。
 - **发往供应商前先剥内部元数据**：娱乐室直连 OpenAI 兼容接口，不经过 `build_multimodal_messages` 重建，
   需要自己用 `routes/playground._sanitize_messages()` 过滤 `_ctx` / `_timeline_sender` 这类内部键。
+- **设备状态只注入一次**：`build_context_segments()` 已把设备状态放进状态通道，
+  聊天室再用 `with_current_device_context()` 往指令通道插一次就会重复
+  （实测每次调用多拼一遍，白烧 token 且给模型两份同样事实）。
+  该函数的去重只查传进去的那一个列表，看不到别的通道——所以调用方要用
+  `existing_context=state` 把已组装的通道传进去才会生效。
 - **两个聊天页共用一套气泡拆段**：私聊与聊天室的 AI / 用户消息都走
   `chatroom-markdown.js` 的 `splitUserBubbleParts()`，标题独立成块、正文每段一个气泡、
   单换行也拆段（不再合并成同段里的 `<br>`）。改任一页的渲染都会同时影响另一页与相关 JS 测试，

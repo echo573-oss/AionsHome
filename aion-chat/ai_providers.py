@@ -1953,16 +1953,21 @@ def with_current_device_context(
     messages: list,
     *,
     insert_at: int | None = None,
+    existing_context: list | None = None,
 ) -> list:
     """把设备当前状态并进上下文。
 
     指定 insert_at 时作为运行时状态消息插入（指令通道，不再配一条伪造的确认
     回复）；不指定时沿用旧行为，挂到最后一条真实用户发言上。
+
+    ``existing_context`` 用于跨通道查重：设备状态可能已经在别处（例如
+    ``build_context_segments`` 放进状态通道）注入过，此时不应再插一份。
     """
     prepared = [dict(message) for message in messages]
+    seen_sources = list(prepared) + list(existing_context or [])
     if any(
         "【设备当前状态】" in str(message.get("content") or "")
-        for message in prepared
+        for message in seen_sources
     ):
         return prepared
     try:

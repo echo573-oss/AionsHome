@@ -7,6 +7,55 @@ from context_blocks import CTX_RUNTIME, STATE_NOTICE
 
 
 class RoleDeviceContextInjectionTest(unittest.IsolatedAsyncioTestCase):
+    async def test_device_context_is_not_injected_twice_across_channels(self):
+        """设备状态可能已在状态通道注入过，指令通道不应再插一份。
+
+        聊天室原先每次调用都会把设备状态拼两遍（build_context_segments 放进
+        状态通道，with_current_device_context 又放进指令通道），白白烧 token
+        并给模型两份同样的事实。
+        """
+        state_channel = [{
+            "role": "user",
+            "content": f"{STATE_NOTICE}\n【设备当前状态】\n电脑：刚刚有键鼠输入。",
+            "_ctx": CTX_RUNTIME,
+        }]
+        instructions = [{"role": "system", "content": "[系统能力]\n能力说明"}]
+
+        with patch(
+            "activity.get_device_context_for_prompt",
+            return_value="【设备当前状态】\n电脑：刚刚有键鼠输入。",
+        ):
+            prepared = ai_providers.with_current_device_context(
+                instructions,
+                insert_at=len(instructions),
+                existing_context=state_channel,
+            )
+
+        combined = "\n".join(str(m.get("content") or "") for m in prepared)
+        self.assertEqual(0, combined.count("【设备当前状态】"))
+
+    async def test_device_context_is_still_injected_when_no_other_channel_has_it(self):
+        """其它通道没有设备状态时，指令通道照常注入。"""
+        instructions = [{"role": "system", "content": "[系统能力]\n能力说明"}]
+        state_channel = [{
+            "role": "user",
+            "content": f"{STATE_NOTICE}\n【当前日程列表】\n没有日程。",
+            "_ctx": CTX_RUNTIME,
+        }]
+
+        with patch(
+            "activity.get_device_context_for_prompt",
+            return_value="【设备当前状态】\n电脑：刚刚有键鼠输入。",
+        ):
+            prepared = ai_providers.with_current_device_context(
+                instructions,
+                insert_at=len(instructions),
+                existing_context=state_channel,
+            )
+
+        combined = "\n".join(str(m.get("content") or "") for m in prepared)
+        self.assertEqual(1, combined.count("【设备当前状态】"))
+
     async def test_explicit_insertion_places_device_context_before_memory_and_body(self):
         messages = [
             {"role": "user", "content": "[系统能力]\n能力说明"},

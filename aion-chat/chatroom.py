@@ -1235,6 +1235,7 @@ async def build_aion_group_context(
     instructions = with_current_device_context(
         instructions,
         insert_at=len(instructions),
+        existing_context=state,
     )
 
     # 3. 构建 recent_messages 用于本地前置路由
@@ -1360,6 +1361,7 @@ async def build_connor_group_context(
     instructions = with_current_device_context(
         instructions,
         insert_at=len(instructions),
+        existing_context=state,
     )
 
     # 2. 构建 recent_messages 用于本地前置路由
@@ -1493,6 +1495,7 @@ async def build_connor_1v1_context(
     instructions = with_current_device_context(
         instructions,
         insert_at=len(instructions),
+        existing_context=state,
     )
 
     # 构建 recent_messages 用于本地前置路由
