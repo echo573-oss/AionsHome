@@ -176,11 +176,83 @@ async def discover_models(force=False):
                 await process.wait()
 
 
-async def _read_stderr(reader):
+async def _read_stderr(reader, buffer: list | None = None):
     tail = b''
     while chunk := await reader.read(4096):
-        tail = (tail + chunk)[-4096:]
+        tail = (tail + chunk)[-16384:]
+        if buffer is not None:
+            buffer.append(tail.decode('utf-8', errors='replace'))
     return tail.decode('utf-8', errors='replace').strip()
+
+
+# AGY 的 stderr 里混着大量与本次失败无关的噪音（git watcher、遥测、缓存刷新）。
+# 无脑取尾部会把真正的错误行挤出窗口，只剩半截 URL，看不出原因。
+# 这里按优先级挑出真正说明问题的那一行。
+_ERROR_LINE_PATTERNS = (
+    re.compile(r"eligibility check failed", re.I),
+    re.compile(r"Validation failed", re.I),
+    re.compile(r"not logged into Antigravity", re.I),
+    re.compile(r"error getting token source", re.I),
+    re.compile(r"^\s*Error:\s*(.+)$", re.I),
+    re.compile(r"Permission denied", re.I),
+    re.compile(r"quota", re.I),
+    re.compile(r"rate limit", re.I),
+    re.compile(r"401|403|429", re.I),
+)
+
+# AGY 的日志行首带时间戳和源码位置，展示给用户时去掉。
+# 形如：E1110 16:44:16.687869       1 printmode.go:297] Print mode: ...
+_LOG_LINE_PREFIX = re.compile(
+    r"^[EIWF]\d{4}\s+[\d:.]+\s+\d+\s+[\w./:]+]\s*"
+)
+
+
+def _clean_log_line(line: str) -> str:
+    """去掉 AGY 日志行首的时间戳与源码位置。"""
+    return _LOG_LINE_PREFIX.sub("", str(line or "").strip()).strip()
+
+
+def extract_error_line(stderr: str) -> str:
+    """从 AGY 的 stderr 里挑出最能说明失败原因的一行。
+
+    stderr 里的错误常常被后面一堆 git watcher / 遥测噪音顶掉，直接取尾部会
+    只剩下半截 URL（例如 ``Get "": EOF``），看不出到底哪里出的问题。
+    这里按已知错误模式逐条匹配，取第一条命中的完整行；都没命中时退回尾部。
+    """
+    text = str(stderr or "").strip()
+    if not text:
+        return ""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for pattern in _ERROR_LINE_PATTERNS:
+        for line in lines:
+            if pattern.search(line):
+                return _clean_log_line(line)
+    # 没命中已知模式：取最后一条看起来像错误的信息行
+    for line in reversed(lines):
+        if "error" in line.lower() or "failed" in line.lower():
+            return _clean_log_line(line)
+    return _clean_log_line(lines[-1]) if lines else ""
+
+
+def _merge_cli_error(cli_error, stderr_buffer) -> str:
+    """合并 CLI 自报的 error 与 stderr 里的关键行。
+
+    CLI 在 result 事件里给的 error 往往只有半截（URL 被截断成 ``Get "": EOF``），
+    真正的原因在 stderr 里。两者信息重复时以更完整的那份为准。
+    """
+    primary = str(cli_error or "").strip()
+    stderr_text = ""
+    if stderr_buffer:
+        stderr_text = str(stderr_buffer[-1] if stderr_buffer else "").strip()
+    detail = extract_error_line(stderr_text)
+    if not detail:
+        return primary
+    if not primary:
+        return detail
+    # stderr 的那行通常含完整 URL，CLI 的 error 是它的截断版——直接用更完整的
+    if len(detail) >= len(primary):
+        return detail
+    return f"{primary} | {detail}"
 
 
 def _resolve_agent_path(raw, workspace) -> str:
@@ -265,6 +337,7 @@ async def _stream_chat(binary, prompt, model, workspace, timeout, *, agent=AGENT
         image_manifest = Path(workspace) / '.agents/image-input.json'
         process = None
         stderr_task = None
+        stderr_buffer: list[str] = []
         visible = ''
         final = None
         initialized = False
@@ -279,7 +352,7 @@ async def _stream_chat(binary, prompt, model, workspace, timeout, *, agent=AGENT
                 stderr=asyncio.subprocess.PIPE, limit=8 * 1024 * 1024,
                 env=_cli_env(), **_process_options(),
             ))
-            stderr_task = asyncio.create_task(_read_stderr(process.stderr))
+            stderr_task = asyncio.create_task(_read_stderr(process.stderr, stderr_buffer))
             async with asyncio.timeout(_timeout_seconds(timeout) + 30):
                 payload = {'event': 'user', 'message': {'content': prompt}}
                 try:
@@ -332,7 +405,12 @@ async def _stream_chat(binary, prompt, model, workspace, timeout, *, agent=AGENT
                         elif kind == 'result':
                             final = event.get('result', {})
                             if final.get('status') != 'SUCCESS':
-                                raise AntigravityError(final.get('error') or f"AGY 调用结束：{final.get('status', 'UNKNOWN')}")
+                                # CLI 自己在 result 里给的 error 常常只有半截（URL 被截断），
+                                # 完整原因在 stderr 里。两者合并，让报错能看出到底哪里出问题。
+                                raise AntigravityError(
+                                    _merge_cli_error(final.get('error'), stderr_buffer)
+                                    or f"AGY 调用结束：{final.get('status', 'UNKNOWN')}"
+                                )
                             if not initialized:
                                 raise AntigravityError('AGY 缺少初始化事件，无法确认陪伴模式')
                             response = final.get('response') or ''
@@ -355,7 +433,10 @@ async def _stream_chat(binary, prompt, model, workspace, timeout, *, agent=AGENT
                 await process.wait()
                 stderr = await stderr_task
                 if process.returncode or final is None or not visible:
-                    raise AntigravityError(stderr or 'AGY 未收到完整回复，请检查登录、额度和网络')
+                    detail = extract_error_line(stderr)
+                    raise AntigravityError(
+                        detail or 'AGY 未收到完整回复，请检查登录、额度和网络'
+                    )
         except TimeoutError as exc:
             raise AntigravityError('AGY 回复超时，请稍后重试') from exc
         finally:
