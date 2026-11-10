@@ -447,6 +447,18 @@ class TranscriptNoteTest(unittest.TestCase):
         note = context_builder.render_transcript_note()
         self.assertIn("你自己之前说过的内容", note["content"])
 
+    def test_note_does_not_show_a_format_example(self):
+        """说明里不要举格式例子——例子会和真实消息长得一样，模型容易当真。"""
+        note = context_builder.render_transcript_note()
+        self.assertNotIn("当前用户消息 - ", note["content"])
+        self.assertNotIn("历史消息 - ", note["content"])
+
+    def test_scene_notes_do_not_repeat_the_reading_guide(self):
+        """私聊/群聊说明只讲场景，读法统一由 [历史记录说明] 负责，不要重复。"""
+        chatroom_source = (ROOT / "chatroom.py").read_text(encoding="utf-8")
+        self.assertNotIn("只是记录格式，不是你的回复格式", chatroom_source)
+        self.assertNotIn("以下对话记录按时间线排列", chatroom_source)
+
     def test_timeline_keeps_the_note_out_of_the_conversation(self):
         merged = [{
             "sender": "user", "content": "你好", "created_at": 1000.0,
