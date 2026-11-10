@@ -4221,7 +4221,13 @@ function handlePoiSearch(categories, msgId) {
 }
 
 // ── UI ──
-function handleKey(e) { if (e.key === "Enter" && e.ctrlKey) { e.preventDefault(); send(); } }
+// Enter 直接发送；Shift+Enter 换行。中文输入法组词时的 Enter 只用于选词，不发送。
+function handleKey(e) {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    send();
+  }
+}
 
 function luckinOrderStatusHtml(data) {
   const code = data && data.take_meal_code ? String(data.take_meal_code) : "";

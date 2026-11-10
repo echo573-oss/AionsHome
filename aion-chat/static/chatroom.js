@@ -4488,15 +4488,14 @@ function handleSSE(data) {
 }
 
 inputEl.addEventListener('input', scheduleInputResize);
-inputEl.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.isComposing) {
-    // Shift+Enter 或 Ctrl+Enter 发送，Enter 换行
-    if (e.shiftKey || e.ctrlKey) {
-      e.preventDefault();
-      composer.requestSubmit();
-    }
+// Enter 直接发送；Shift+Enter 换行。中文输入法组词时的 Enter 只用于选词，不发送。
+function crComposerKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    composer.requestSubmit();
   }
-});
+}
+inputEl.addEventListener('keydown', crComposerKey);
 
 // ══════════════════════════════════════════════════
 //  AI 互聊
