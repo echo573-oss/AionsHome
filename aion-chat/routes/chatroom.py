@@ -4502,7 +4502,8 @@ async def _reply_connor(room_id, msgs, context_limit, query_text, _q, *, connor_
         ambient_context=ambient_context,
     )
     await _maybe_handle_connor_browser_context(
-        connor_history, query_text, room_id, scope_type="chatroom" if room.get("type") != "connor_1v1" else "private",
+        connor_history, query_text, room_id,
+        scope_type="private" if await _get_room_type(room_id) == "connor_1v1" else "chatroom",
     )
 
     async def content_stream():

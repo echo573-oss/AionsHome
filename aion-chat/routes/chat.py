@@ -1791,7 +1791,10 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
     if recall_query:
         recalled = [r for r in debug_top6 if r["score"] >= 0.45 and r["id"] not in surfaced_ids][:5]
         if (is_search_needed or digest_result.get("require_detail")) and recalled:
-            detail_text = await fetch_source_details(recalled, recall_keywords)
+                            # 原文只挂最相关的那一条，避免把无关召回的长回复一起塞进 prompt。
+                            # 取「第一条有来源的」而非固定 recalled[0]——最相关的可能是无来源的旧记忆。
+                            top_source = next((r for r in recalled if r.get("source_start_ts")), None)
+                            detail_text = await fetch_source_details([top_source], recall_keywords) if top_source else ""
 
     debug_recalled = [{"content": m["content"], "type": m["type"], "score": m["score"],
                        "vec_sim": m.get("vec_sim"), "kw_score": m.get("kw_score"),
@@ -2470,7 +2473,10 @@ async def send_message(conv_id: str, body: MsgCreate):
             recalled = [r for r in debug_top6 if r["score"] >= 0.45 and r["id"] not in surfaced_ids][:5]
             # 如果需要补充记忆证据
             if (is_search_needed or digest_result.get("require_detail")) and recalled:
-                detail_text = await fetch_source_details(recalled, recall_keywords)
+                                # 原文只挂最相关的那一条，避免把无关召回的长回复一起塞进 prompt。
+                                # 取「第一条有来源的」而非固定 recalled[0]——最相关的可能是无来源的旧记忆。
+                                top_source = next((r for r in recalled if r.get("source_start_ts")), None)
+                                detail_text = await fetch_source_details([top_source], recall_keywords) if top_source else ""
 
         debug_recalled = [{"content": m["content"], "type": m["type"], "score": m["score"],
                            "vec_sim": m.get("vec_sim"), "kw_score": m.get("kw_score"),
@@ -3960,7 +3966,10 @@ async def regenerate_message(conv_id: str, context_limit: int = 30, whisper_mode
         if recall_query:
             recalled = [r for r in debug_top6 if r["score"] >= 0.45 and r["id"] not in surfaced_ids][:5]
             if (is_search_needed or digest_result.get("require_detail")) and recalled:
-                detail_text = await fetch_source_details(recalled, recall_keywords)
+                                # 原文只挂最相关的那一条，避免把无关召回的长回复一起塞进 prompt。
+                                # 取「第一条有来源的」而非固定 recalled[0]——最相关的可能是无来源的旧记忆。
+                                top_source = next((r for r in recalled if r.get("source_start_ts")), None)
+                                detail_text = await fetch_source_details([top_source], recall_keywords) if top_source else ""
 
         debug_recalled = [{"content": m["content"], "type": m["type"], "score": m["score"],
                            "vec_sim": m.get("vec_sim"), "kw_score": m.get("kw_score"),

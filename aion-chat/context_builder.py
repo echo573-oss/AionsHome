@@ -524,17 +524,21 @@ async def build_memory_blocks(
         if include_source_details and (
             is_search_needed or digest_result.get("require_detail")
         ):
+            # 原文只挂最相关的那一条：用户问的是一件事，挂全部召回记忆的原文
+            # 会把无关长回复一起塞进 prompt（实测多花 12000+ tokens）。
+            # 注意要取「第一条有来源的」，而不是固定取 recalled[0]——最相关的
+            # 那条可能是没有来源的旧记忆，取它会把原文整段丢掉。
+            top_source = next(
+                (r for r in recalled if r.get("source_start_ts")), None,
+            )
             detail_text = ""
-            if use_main_memories:
-                detail_text = await fetch_source_details(
-                    [r for r in recalled if r.get("source_start_ts")], recall_keywords
-                )
-            elif chatroom_source_fn:
-                detail_text = await chatroom_source_fn(
-                    [r for r in recalled if r.get("source_start_ts")], recall_keywords
-                )
+            if top_source:
+                if use_main_memories:
+                    detail_text = await fetch_source_details([top_source], recall_keywords)
+                elif chatroom_source_fn:
+                    detail_text = await chatroom_source_fn([top_source], recall_keywords)
             if detail_text:
-                memory_block += f"\n\n[记忆来源原文]\n以下是相关记忆挂载的来源原文；旧记忆没有精确来源时才会按时间范围回退筛选原文：\n{detail_text}"
+                memory_block += f"\n\n[记忆来源原文]\n以下是这条相关记忆挂载的来源原文；旧记忆没有精确来源时才会按时间范围回退筛选原文，标为「时间范围推测」的段落可能包含无关内容：\n{detail_text}"
 
     debug_candidates = []
     seen_debug = set()
