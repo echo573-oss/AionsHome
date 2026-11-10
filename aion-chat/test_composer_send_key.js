@@ -44,18 +44,32 @@ function makeEvent(overrides = {}) {
   return { event, calls };
 }
 
-function loadPrivateHandler() {
+const DESKTOP_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36';
+const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Mobile Safari/537.36';
+const IOS_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+
+function loadPrivateHandler(userAgent = DESKTOP_UA, maxTouchPoints = 0) {
   const sent = [];
-  const context = { send: () => sent.push('send'), console };
+  const context = {
+    send: () => sent.push('send'),
+    navigator: { userAgent, maxTouchPoints },
+    console,
+  };
   vm.createContext(context);
+  vm.runInContext(extractFunction(chatSource, 'function _isMobileComposer'), context);
   vm.runInContext(extractFunction(chatSource, 'function handleKey'), context);
   return { handler: context.handleKey, sent };
 }
 
-function loadRoomHandler() {
+function loadRoomHandler(userAgent = DESKTOP_UA, maxTouchPoints = 0) {
   const submitted = [];
-  const context = { composer: { requestSubmit: () => submitted.push('submit') }, console };
+  const context = {
+    composer: { requestSubmit: () => submitted.push('submit') },
+    navigator: { userAgent, maxTouchPoints },
+    console,
+  };
   vm.createContext(context);
+  vm.runInContext(extractFunction(roomSource, 'function crIsMobileComposer'), context);
   vm.runInContext(extractFunction(roomSource, 'function crComposerKey'), context);
   return { handler: context.crComposerKey, submitted };
 }
@@ -126,4 +140,44 @@ test('聊天室的发送键处理确实挂在输入框上', () => {
   assert.match(roomSource, /inputEl\.addEventListener\('keydown',\s*crComposerKey\);/);
   const privateHtml = fs.readFileSync(path.join(ROOT, 'static', 'chat.html'), 'utf8');
   assert.match(privateHtml, /id="input"[^>]*onkeydown="handleKey\(event\)"/);
+});
+
+test('手机端（Android / iOS）：回车换行，不发送也不拦默认行为', () => {
+  for (const ua of [ANDROID_UA, IOS_UA]) {
+    const priv = loadPrivateHandler(ua, 5);
+    const privEvent = makeEvent();
+    priv.handler(privEvent.event);
+    assert.deepEqual(priv.sent, [], `Android/iOS 私聊不应发送：${ua}`);
+    assert.deepEqual(privEvent.calls, [], `Android/iOS 私聊不应拦默认行为：${ua}`);
+
+    const room = loadRoomHandler(ua, 5);
+    const roomEvent = makeEvent();
+    room.handler(roomEvent.event);
+    assert.deepEqual(room.submitted, [], `Android/iOS 聊天室不应发送：${ua}`);
+    assert.deepEqual(roomEvent.calls, [], `Android/iOS 聊天室不应拦默认行为：${ua}`);
+  }
+});
+
+test('手机端：Shift+Enter 同样只是换行', () => {
+  const priv = loadPrivateHandler(ANDROID_UA, 5);
+  const privEvent = makeEvent({ shiftKey: true });
+  priv.handler(privEvent.event);
+  assert.deepEqual(priv.sent, []);
+  assert.deepEqual(privEvent.calls, []);
+});
+
+test('iPadOS 伪装成 Macintosh 时靠触点数判定为移动端', () => {
+  const ipad = loadPrivateHandler('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15', 5);
+  const event = makeEvent();
+  ipad.handler(event.event);
+  assert.deepEqual(ipad.sent, []);
+  assert.deepEqual(event.calls, []);
+});
+
+test('桌面端（含触屏笔记本）仍然 Enter 发送', () => {
+  const desktop = loadPrivateHandler(DESKTOP_UA, 10);
+  const event = makeEvent();
+  desktop.handler(event.event);
+  assert.deepEqual(desktop.sent, ['send']);
+  assert.deepEqual(event.calls, ['preventDefault']);
 });

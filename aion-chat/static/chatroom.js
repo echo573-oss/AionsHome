@@ -4488,12 +4488,22 @@ function handleSSE(data) {
 }
 
 inputEl.addEventListener('input', scheduleInputResize);
+// 移动端（手机软键盘 / Android App）回车换行，发送用屏幕上的 ➤ 按钮；
+// 桌面端 Enter 发送、Shift+Enter 换行。
+function crIsMobileComposer() {
+  const ua = navigator.userAgent || '';
+  if (/Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(ua)) return true;
+  // iPadOS 13+ 的 UA 伪装成 Macintosh，用触点数兜底
+  return /Macintosh/i.test(ua) && (navigator.maxTouchPoints || 0) > 1;
+}
+
 // Enter 直接发送；Shift+Enter 换行。中文输入法组词时的 Enter 只用于选词，不发送。
 function crComposerKey(e) {
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-    e.preventDefault();
-    composer.requestSubmit();
-  }
+  if (e.key !== 'Enter' || e.isComposing) return;
+  if (e.shiftKey) return;
+  if (crIsMobileComposer()) return;
+  e.preventDefault();
+  composer.requestSubmit();
 }
 inputEl.addEventListener('keydown', crComposerKey);
 
