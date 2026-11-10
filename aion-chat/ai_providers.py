@@ -12,6 +12,7 @@ from generation_control import own_stream, own_process
 from system_logs import logged_ai_call, record_cli_prompt, record_sent_messages
 from context_blocks import (
     CTX_RUNTIME,
+    CTX_TRANSCRIPT,
     DATA_KINDS,
     DATA_NOTICE,
     INSTRUCTION_KINDS,
@@ -971,12 +972,16 @@ def _build_cli_prompt(
     state_chunks: list[str] = []
     data_chunks: list[str] = []
     conversation: list = []
+    transcript_note: str = ""
     for message in messages or []:
         if not isinstance(message, dict):
             continue
         kind = context_kind(message)
         content = (message.get("content", "") or "").strip()
-        if kind in DATA_KINDS:
+        if kind == CTX_TRANSCRIPT:
+            # 时间线读法说明：紧贴对话记录渲染，不进指令区
+            transcript_note = content
+        elif kind in DATA_KINDS:
             data_chunks.append(content)
         elif kind in STATE_KINDS:
             state_chunks.append(content)
@@ -1074,6 +1079,14 @@ def _build_cli_prompt(
     data_text = _join_channel_chunks(data_chunks)
     if data_text:
         parts.append(f"[Reference Data]\n{data_text}")
+    # 时间线读法说明：紧挨着它描述的对话记录，不要隔着状态和资料两整块。
+    # 它并进对话段的第一块，避免多出一个 [User] 标签。
+    if transcript_note and merged:
+        first_role, first_text = merged[0]
+        if first_role == "user":
+            merged[0] = (first_role, f"{transcript_note}\n\n{first_text}")
+        else:
+            merged.insert(0, ("user", transcript_note))
     for role, text in merged:
         if role == "assistant":
             parts.append(f"[Assistant]\n{text}")

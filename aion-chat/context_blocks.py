@@ -236,7 +236,11 @@ def context_message(
     if not text:
         return None
     if role is None:
-        role = "user" if kind in (DATA_KINDS | STATE_KINDS) else "system"
+        if kind == CTX_TRANSCRIPT:
+            # 时间线读法说明是给模型看的记录导读，不是指令，走 user 侧。
+            role = "user"
+        else:
+            role = "user" if kind in (DATA_KINDS | STATE_KINDS) else "system"
     body = text
     if notice and kind in DATA_KINDS:
         body = f"{DATA_NOTICE}\n{text}"
@@ -294,6 +298,9 @@ def split_context_messages(messages: list) -> tuple[list, list, list, list]:
             data.append(message)
         elif is_state_message(message):
             state.append(message)
+        elif context_kind(message) == CTX_TRANSCRIPT:
+            # 时间线读法说明跟着真实对话走，才能紧挨着它描述的记录。
+            conversation.append(message)
         elif is_instruction_message(message):
             instructions.append(message)
         else:

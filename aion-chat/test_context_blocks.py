@@ -18,6 +18,7 @@ from context_blocks import (
     CTX_PERSONA,
     CTX_RULES,
     CTX_RUNTIME,
+    CTX_TRANSCRIPT,
     DATA_NOTICE,
     ContextSegment,
     context_message,
@@ -294,11 +295,12 @@ class PrivateChatContextTest(unittest.IsolatedAsyncioTestCase):
     async def test_channels_are_ordered_instruction_then_state_then_data(self):
         messages = await self._build(play_prompt="hidden-card", conv_id="conv-1")
         kinds = [m["_ctx"] for m in messages]
-        # 能力 → 玩法提示（规则）→ 时间线说明（规则）→ 运行时状态 → 外部资料
-        self.assertEqual(kinds, [CTX_ABILITY, CTX_RULES, CTX_RULES, CTX_RUNTIME, CTX_EXTERNAL])
+        # 能力 → 玩法提示（规则）→ 运行时状态 → 外部资料
+        # 时间线读法说明已挪到对话记录之前，由组装点插入，不在这里。
+        self.assertEqual(kinds, [CTX_ABILITY, CTX_RULES, CTX_RUNTIME, CTX_EXTERNAL])
         roles = [m["role"] for m in messages]
         # 运行时状态是事实，走 user 角色；只有指令通道拿 system
-        self.assertEqual(roles, ["system", "system", "system", "user", "user"])
+        self.assertEqual(roles, ["system", "system", "user", "user"])
 
     async def test_ability_and_runtime_and_memory_are_all_present(self):
         messages = await self._build()
@@ -360,7 +362,16 @@ class ChatroomContextTest(unittest.IsolatedAsyncioTestCase):
             with self.subTest(builder=builder.__name__):
                 messages, _ = await self._build(builder, dict(self.MEMORY))
                 roles = [m["role"] for m in messages]
-                self.assertEqual(roles, sorted(roles, key=lambda r: 0 if r == "system" else 1))
+                # 指令通道拿 system 且排在最前；其余（状态 / 资料 / 时间线说明 / 对话）都是 user 侧。
+                system_positions = [i for i, r in enumerate(roles) if r == "system"]
+                self.assertTrue(system_positions)
+                self.assertEqual(system_positions, list(range(len(system_positions))))
+                # 时间线说明属于对话通道，不占 system 位
+                note_messages = [m for m in messages if m.get("_ctx") == CTX_TRANSCRIPT]
+                self.assertEqual(len(note_messages), 1)
+                self.assertEqual(note_messages[0]["role"], "user")
+                # 它必须排在最后一段对话内容之前
+                self.assertEqual(roles[-1], "user")
 
     async def test_memory_and_abilities_survive_in_the_right_channel(self):
         messages, _ = await self._build(chatroom.build_aion_group_context, dict(self.MEMORY))
@@ -424,14 +435,17 @@ class TranscriptOrderTest(unittest.IsolatedAsyncioTestCase):
 
 
 class TranscriptNoteTest(unittest.TestCase):
-    """时间线读法说明属于规则通道，不是用户发言。"""
+    """时间线读法说明紧贴对话记录，而不是躺在指令区里。"""
 
-    def test_note_is_an_instruction_channel_message(self):
+    def test_note_belongs_to_the_conversation_channel(self):
         note = context_builder.render_transcript_note()
         self.assertIsNotNone(note)
-        self.assertEqual(note["role"], "system")
-        self.assertEqual(note["_ctx"], "rules")
+        self.assertEqual(CTX_TRANSCRIPT, note["_ctx"])
         self.assertIn("[历史记录说明]", note["content"])
+
+    def test_note_tells_the_model_its_own_replies_are_in_the_history(self):
+        note = context_builder.render_transcript_note()
+        self.assertIn("你自己之前说过的内容", note["content"])
 
     def test_timeline_keeps_the_note_out_of_the_conversation(self):
         merged = [{
@@ -441,11 +455,38 @@ class TranscriptNoteTest(unittest.TestCase):
         with patch("context_builder.load_worldbook", return_value={"ai_name": "A", "user_name": "B"}):
             with_note = context_builder.render_merged_timeline(merged, "aion")
             without_note = context_builder.render_merged_timeline(merged, "aion", include_note=False)
-        self.assertEqual(with_note[0]["role"], "system")
-        self.assertEqual(with_note[0]["_ctx"], "rules")
+        self.assertEqual(with_note[0]["_ctx"], CTX_TRANSCRIPT)
         self.assertEqual(len(without_note), len(with_note) - 1)
         # 真实对话部分完全一致
         self.assertEqual(with_note[1:], without_note)
+
+    def test_cli_prompt_puts_the_note_next_to_the_conversation(self):
+        """说明必须紧挨着它描述的对话记录，不能隔着状态与资料两整块。"""
+        import ai_providers
+
+        note = context_builder.render_transcript_note()
+        prompt = ai_providers._build_cli_prompt([
+            {"role": "system", "content": "persona", "_ctx": CTX_PERSONA},
+            context_message(CTX_RUNTIME, "现在是 12:00"),
+            context_message(CTX_MEMORY, "记忆正文"),
+            note,
+            {"role": "user", "content": "历史消息 - 知：你好"},
+        ])
+        note_pos = prompt.find("[历史记录说明]")
+        user_pos = prompt.find("[User]")
+        self.assertNotEqual(-1, note_pos)
+        self.assertNotEqual(-1, user_pos)
+        # 说明在 [User] 段里、对话记录之前，且中间没有别的通道
+        self.assertGreater(note_pos, user_pos)
+        between = prompt[user_pos:note_pos]
+        self.assertNotIn("[Current State]", between)
+        self.assertNotIn("[Reference Data]", between)
+        # 不应该多出第二个 [User] 标签
+        self.assertEqual(1, prompt.count("[User]"))
+        # 说明必须紧挨着它描述的对话记录
+        first_history = prompt.find("历史消息 - 知：")
+        self.assertGreater(first_history, note_pos)
+        self.assertLess(first_history - note_pos, 400)
 
 
 class MigratedModuleTest(unittest.IsolatedAsyncioTestCase):

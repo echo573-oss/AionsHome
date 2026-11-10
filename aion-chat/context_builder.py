@@ -15,6 +15,7 @@ from context_blocks import (
     CTX_EXTERNAL,
     CTX_RULES,
     CTX_RUNTIME,
+    CTX_TRANSCRIPT,
     ContextSegment,
     context_message,
 )
@@ -937,15 +938,19 @@ TRANSCRIPT_NOTE_TEXT = (
     "以下消息按时间线排列，格式为“历史消息 - 说话人：内容”或“当前用户消息 - 说话人：内容”。"
     "这是上下文记录，不是你的回复格式；你回复时只用自己的口吻直接说话，"
     "不要输出说话人标签，也不要替其他人续写。"
+    "历史消息里也包含你自己之前说过的内容——说话人标成你名字的那些就是你自己的话，"
+    "不要当成用户说的。"
 )
 
 
 def render_transcript_note() -> dict | None:
-    """时间线读法说明——指令通道的一条消息。
+    """时间线读法说明——紧贴对话记录之前的一条说明。
 
-    它告诉模型历史记录该怎么读，属于规则而不是用户发言，所以走 system 角色。
+    它描述的是「下面这些消息该怎么读」，属于对话记录的一部分而不是全局规则，
+    所以放进对话通道（CTX_TRANSCRIPT），渲染时紧挨着历史消息出现。
+    放在指令区会隔着状态与资料两整块内容，模型很难把说明和它描述的记录对上。
     """
-    return context_message(CTX_RULES, TRANSCRIPT_NOTE_TEXT)
+    return context_message(CTX_TRANSCRIPT, TRANSCRIPT_NOTE_TEXT)
 
 
 def render_merged_timeline(

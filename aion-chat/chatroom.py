@@ -1219,10 +1219,8 @@ async def build_aion_group_context(
         if message is not None:
             target.append(message)
 
-    # 时间线读法说明：规则通道，放在指令区里
-    note = render_transcript_note()
-    if note is not None:
-        instructions.append(note)
+    # 时间线读法说明：紧挨着它描述的对话记录，不要隔着状态和资料两整块。
+    transcript_note = render_transcript_note()
 
     append_intimacy_prompt(
         instructions,
@@ -1283,6 +1281,8 @@ async def build_aion_group_context(
         include_image_attachments=include_image_attachments,
         include_note=False,
     )
+    if transcript_note is not None:
+        timeline_history.insert(0, transcript_note)
     # 指令 → 状态 → 资料 → 真实对话——各家 API 都能先收到系统指令
     history = instructions + state + data + timeline_history
 
@@ -1345,10 +1345,8 @@ async def build_connor_group_context(
         if message is not None:
             target.append(message)
 
-    # 时间线读法说明：规则通道，放在指令区里
-    note = render_transcript_note()
-    if note is not None:
-        instructions.append(note)
+    # 时间线读法说明：紧挨着它描述的对话记录，不要隔着状态和资料两整块。
+    transcript_note = render_transcript_note()
 
     append_intimacy_prompt(
         instructions,
@@ -1422,6 +1420,8 @@ async def build_connor_group_context(
         include_image_attachments=include_image_attachments,
         include_note=False,
     )
+    if transcript_note is not None:
+        timeline_history.insert(0, transcript_note)
     history = instructions + state + data + timeline_history
 
     return history, mem_result.get("digest_result", {})
@@ -1479,10 +1479,8 @@ async def build_connor_1v1_context(
 
     merged = await fetch_merged_timeline("connor", context_limit)
 
-    # 时间线读法说明：规则通道，放在指令区里
-    note = render_transcript_note()
-    if note is not None:
-        instructions.append(note)
+    # 时间线读法说明：紧挨着它描述的对话记录，不要隔着状态和资料两整块。
+    transcript_note = render_transcript_note()
 
     append_intimacy_prompt(
         instructions,
@@ -1549,6 +1547,8 @@ async def build_connor_1v1_context(
         include_image_attachments=include_image_attachments,
         include_note=False,
     )
+    if transcript_note is not None:
+        timeline_history.insert(0, transcript_note)
     messages = instructions + state + data + timeline_history
 
     return messages, mem_result.get("digest_result", {})

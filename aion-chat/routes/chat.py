@@ -249,11 +249,6 @@ async def _build_private_context_messages(
             [ContextSegment(CTX_RULES, text) for text in rule_texts]
         )
 
-    # 时间线读法说明：规则通道，放在指令区里，别混进真实对话
-    note = render_transcript_note()
-    if note is not None:
-        messages.append(note)
-
     # 状态通道：日程 / 位置 / 设备状态，然后是当前时间与健康摘要。
     # 这些是此刻的事实，不是指令，所以走 user 角色而不是 system。
     messages += segments_to_messages(state)
@@ -1730,6 +1725,12 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
     history[cap_idx:cap_idx] = context_messages
     inject_offset = len(context_messages)
 
+    # 时间线读法说明：紧挨着它描述的对话记录，不要隔着状态和资料两整块。
+    transcript_note = render_transcript_note()
+    if transcript_note is not None:
+        history.insert(cap_idx + inject_offset, transcript_note)
+        inject_offset += 1
+
     # RAG 记忆召回
     recall_keywords_str = ""
     recalled = []
@@ -2393,6 +2394,12 @@ async def send_message(conv_id: str, body: MsgCreate):
     )
     history[cap_idx:cap_idx] = context_messages
     inject_offset = len(context_messages)
+
+    # 时间线读法说明：紧挨着它描述的对话记录，不要隔着状态和资料两整块。
+    transcript_note = render_transcript_note()
+    if transcript_note is not None:
+        history.insert(cap_idx + inject_offset, transcript_note)
+        inject_offset += 1
 
     # 2. 本地前置路由 + 记忆召回（fast_mode 时跳过以加快语音聊天响应）
     recall_keywords_str = ""
@@ -3885,6 +3892,12 @@ async def regenerate_message(conv_id: str, context_limit: int = 30, whisper_mode
     )
     history[cap_idx:cap_idx] = context_messages
     inject_offset = len(context_messages)
+
+    # 时间线读法说明：紧挨着它描述的对话记录，不要隔着状态和资料两整块。
+    transcript_note = render_transcript_note()
+    if transcript_note is not None:
+        history.insert(cap_idx + inject_offset, transcript_note)
+        inject_offset += 1
 
     # 2. 本地前置路由 + 记忆召回（fast_mode 时跳过）
     recall_keywords_str = ""
