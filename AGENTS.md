@@ -88,6 +88,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-tests.ps1
 - 新接口放 `routes/`，不要往 `main.py` 里继续堆。
 - 改业务行为默认配测试。
 - 提交信息：`<type>: <中文一句话>`，type 用 `feat` / `fix` / `refactor` / `docs` / `test` / `chore`。
+- **改了 `static/` 下的 js / css，要顺手 bump 引用处的 `?v=` 版本号**（`<script src="/static/chat.js?v=...">`）：
+  不 bump 的话浏览器和 Android WebView 会继续吃缓存里的旧文件，用户看不到改动。
+  这不是改缓存策略——缓存策略本身别动（见下方"当前不要做的三件事"）。
+  Android 端只有 `common.js` / `common.css` / `video-call.js` 有本地副本，
+  `chat.js` / `chatroom.js` 等一律走服务端，bump 版本号即可让 App 拉到新版本。
 
 ## 已知结构陷阱（动手前先确认路径）
 
