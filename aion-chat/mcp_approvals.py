@@ -7,9 +7,8 @@ import json
 import secrets
 import time
 from dataclasses import dataclass
-from urllib.parse import urlsplit
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from capabilities import is_capability_enabled
@@ -19,7 +18,13 @@ from mcp_client import is_chat_write_tool_name, mcp_manager
 TTL_SECONDS = 300
 MAX_PENDING = 24
 MAX_ARGUMENT_CHARS = 3500
-router = APIRouter(prefix="/api/mcp-approvals", tags=["mcp-approvals"])
+from local_http import require_local_request
+
+router = APIRouter(
+    prefix="/api/mcp-approvals",
+    tags=["mcp-approvals"],
+    dependencies=[Depends(require_local_request)],
+)
 
 
 @dataclass
@@ -176,10 +181,6 @@ async def list_pending(scope_type: str, scope_id: str):
 
 @router.post("/{approval_id}/decision")
 async def decide_write(approval_id: str, body: DecisionRequest, request: Request):
-    # 浏览器之外的跨域网页不得代替用户点击审批。
-    origin = request.headers.get("origin")
-    if origin and urlsplit(origin).netloc != request.headers.get("host"):
-        raise HTTPException(status_code=403, detail="跨站操作被拒绝")
     try:
         item = await approval_registry.claim(
             approval_id, body.nonce, body.scope_type, body.scope_id,

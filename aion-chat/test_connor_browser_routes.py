@@ -21,7 +21,19 @@ class ConnorBrowserRoutesTests(unittest.IsolatedAsyncioTestCase):
         self.handoff_patch = patch.object(browser_handoff, "get_connor_browser_handoff", return_value=self.handoff)
         self.handoff_patch.start()
         _set_active_session_id("chatroom", "connor_1v1", None)
-        self.client = TestClient(app)
+        self.client = TestClient(app, base_url='http://localhost:8080', client=('127.0.0.1', 50000))
+        self._raw_request = self.client.request
+
+        def _local_request(method, url, **kwargs):
+            headers = {"Host": "localhost:8080"}
+            if method.upper() not in {"GET", "HEAD", "OPTIONS"}:
+                headers["Origin"] = "http://localhost:8080"
+            extra = kwargs.pop("headers", None) or {}
+            headers.update(extra)
+            kwargs["headers"] = headers
+            return self._raw_request(method, url, **kwargs)
+
+        self.client.request = _local_request
 
     def tearDown(self):
         self.handoff_patch.stop()

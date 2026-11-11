@@ -1,38 +1,16 @@
 """本机表单资料与凭据管理接口：仅 Windows 本机浏览器可访问。"""
 from __future__ import annotations
 
-from urllib.parse import urlsplit
-
 from fastapi import APIRouter, HTTPException, Request
+
+from local_http import require_local
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 import form_vault
 
 router = APIRouter(prefix="/api/form-vault", tags=["form-vault"])
-_LOOPBACK = {"localhost", "127.0.0.1", "::1"}
 _NO_CACHE = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
-
-
-def require_local(request: Request, *, mutation: bool = False) -> None:
-    """拒绝 LAN/Tailscale/反向代理及跨站请求；不相信自报的 X-Forwarded-For。"""
-    remote = request.client.host if request.client else ""
-    if remote not in {"127.0.0.1", "::1"}:
-        raise HTTPException(403, "资料库只能在运行新家的 Windows 电脑上管理")
-    host_header = request.headers.get("host", "")
-    try:
-        url = urlsplit("http://" + host_header)
-        hostname = url.hostname
-        port = url.port
-    except ValueError:
-        raise HTTPException(403, "非法访问地址") from None
-    if hostname not in _LOOPBACK or port not in (None, 8080):
-        raise HTTPException(403, "请通过 localhost:8080 访问资料库")
-    if mutation:
-        origin = request.headers.get("origin", "")
-        expected = request.url.scheme + "://" + host_header
-        if origin != expected or request.headers.get("sec-fetch-site", "") in {"cross-site", "same-site"}:
-            raise HTTPException(403, "跨站请求已拒绝")
 
 
 def _result(payload: dict) -> JSONResponse:

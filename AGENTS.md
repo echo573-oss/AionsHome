@@ -28,6 +28,13 @@
 - 启动：`一键启动.bat`（内部调用 `aion-chat/restart-home-qq.ps1`）。
 - 停止：`一键关闭AionsHome.bat` 或 `scripts/stop-aionshome.ps1`。
 - 服务地址：`http://localhost:8080`。
+- **⚠️ 改完代码要用 `重启小家与QQ.bat` 才会真正换进程**：`一键启动.bat` 走的是
+  `restart-home-qq.ps1 -StartOnly`，该模式下**既不杀旧进程也不启新进程**——
+  8080 已经在监听时它只做一次健康检查就返回，看起来"重启完了"其实代码没生效
+  （症状：新加的能力开关报 `unknown capability`，新路由 404）。
+  换完进程后先核对：`GET /api/capabilities` 里有没有新能力、进程 `CreationDate` 是不是刚更新。
+- 直接在终端跑 `restart-home-qq.ps1` 会**挂住不退出**（`Start-Process -RedirectStandardOutput`
+  会让父进程一直等子进程），用 `.bat` 走正常路径；重启完看进程启动时间即可，别等它返回。
 
 ## 测试
 
@@ -223,3 +230,56 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-tests.ps1
   `homecoming_summary_coverage` 表**只在归巢回传流程里才创建**——没用过回传就没有这张表，
   此时该调用静默放行。判断覆盖机制是否真的生效，要查表是否存在，不能只看代码被调用。
 
+
+### 生活日记模块（2026-11-10 新增）
+
+`aion-chat/life_diary.py` + `life_diary_format.py` + `life_diary_prompts.py`：
+从本人聊天里捕捉生活片段，按**事情发生的日期**写进本机 Obsidian 日记库
+（`D:\obvault\DiaryInbox\YYYY-MM\YYYY-MM-DD.md`，一日一夜 APP 的格式）。
+
+- **能力开关 `life_diary`，默认关闭**；UI 在「近期生活与待办」页底部（只读文本框 + 立即整理）。
+- **与后置哨兵是互补的两半，不要合并**：`post_sentinel` 的 prompt 明确写着
+  「日常琐事、梦一律跳过」，它维护"还要跟进的事"；本模块专门收那些被跳过的生活片段。
+  两套 prompt 混用会互相打架，所以分开写但共用 `sentinel_dispatch` 的扇出。
+- **节奏不同**：哨兵是消息级（每条消息一次模型调用）；本模块是**聚合窗口**
+  （静默 30 分钟后跑当天批次 + 每天一次兜底），因为日记的单位是"天"。
+  配置项：`life_diary_quiet_minutes` / `life_diary_daily_hour` / `life_diary_daily_minute` / `life_diary_root`。
+- **写入必须最小侵入**：`life_diary_format.merge_document()` 只改自己负责的 frontmatter 键
+  和 APP 已知 Callout，`## Calendar`、`## 📷 今日图片`、手写正文、未知键原样保留；
+  写文件用临时文件 + `os.replace` 原子替换，**不许整篇覆盖**。
+- **不许写的字段**：`baby_age_*` / `lunar` / `solar_term` / `period_*` / `weight` 由 APP 自己算，
+  白名单在 `life_diary_format.ALLOWED_FIELDS`；模型返回这些字段会被丢弃。
+- **分数不许折算**："心情不错"不写 `mood`，只有"心情7分"才写。
+- **日期按事件归属**：模型从原话推断日期（今天/昨天/上周三），拿不准才用消息当天日期，
+  并在 `life_diary_fragments.date_inferred` 标记 1。
+- `life_diary_fragments` 表记录"哪条片段来自哪些 message id"，
+  **目前只用于幂等与溯源**；删消息后同步改写文件（用户同意后置）尚未实现。
+- 测试：`aion-chat/test_life_diary.py`（17 例）。**不许在测试里碰真实 `D:\obvault`**，
+  用临时目录 + `AIONSHOME_LIFE_DIARY_ROOT` 覆盖。
+
+
+### 本机 HTTP 限制（2026-11-11）
+
+浏览器接管、MCP 审批、表单保险库，以及娱乐房的 playground 工具执行，
+都只允许在运行新家的这台 Windows 电脑上、通过 `http://localhost:8080`
+（Host 为 `localhost` / `127.0.0.1` / `::1`，客户端为回环地址）访问。
+家庭局域网（`192.168.3.39`）和 Tailscale（`100.66.80.37`）仍可打开聊天页，
+但不能调这些接口。
+
+- 共用校验在 `aion-chat/local_http.py`：`require_local` / `require_local_request`。
+  已挂到 `routes/form_vault.py`、`routes/connor_browser.py`、`mcp_approvals.py`、
+  `routes/playground.py`（整路由，含工具执行）。
+- GET/HEAD/OPTIONS：只检查回环客户端 + Host。写操作还要求
+  `Origin` 等于 `scheme://Host`，并拒绝 `sec-fetch-site` 为 `cross-site` 或 `same-site`。
+  **不要信任 `X-Forwarded-For`**。不要写成「只有带了 Origin 才核对」——缺 Origin 的 POST 必须拒绝，
+  否则审批接口会被绕过。
+- 新增加密、接管、审批、可执行工具一类接口时，复用 `Depends(require_local_request)`，不要另写一套更松的检查。
+- 测这些路由时，`TestClient` 默认 `Host=testserver`、`client=testclient`，会被 403。
+  使用：`TestClient(..., base_url='http://localhost:8080', client=('127.0.0.1', 50000))`，
+  非 GET 请求还要带上匹配的 `Origin`。参考 `test_local_http_routes.py`、`test_connor_browser_routes.py`。
+- `routes/chatroom.py` 的 `_reply_connor` 必须用 `_get_room_type(room_id)`，不要引用未定义的房间类型名（本地提交 `f51f124` 已修，不要回退）。
+
+### 提交与推送
+
+- 用户约定：**只有明确说要推送时才 `git push`**；日常本机改动不要自动同步到 GitHub。
+- 提交前按路径显式 `git add`（见上方「主工作区会被并行会话写入」），不要把别人的在制品和密钥推进去。

@@ -7,7 +7,7 @@ import json, time, asyncio, logging
 
 import aiosqlite, httpx
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -20,12 +20,13 @@ from context_blocks import (
 )
 from database import get_db
 from ws import manager
+from local_http import require_local_request
 from mcp_client import mcp_manager
 from system_logs import logged_ai_call
 
 logger = logging.getLogger("playground")
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_local_request)])
 
 # ── 当前正在执行的任务（用于中断） ──
 _active_tasks: dict[str, asyncio.Event] = {}  # server_name -> cancel_event

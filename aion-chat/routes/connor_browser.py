@@ -5,13 +5,18 @@
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from connor_browser_chat import execute_connor_browser_action
+from local_http import require_local_request
 
 
-router = APIRouter(prefix="/api/browser/connor", tags=["connor-browser"])
+router = APIRouter(
+    prefix="/api/browser/connor",
+    tags=["connor-browser"],
+    dependencies=[Depends(require_local_request)],
+)
 
 
 class OpenRequest(BaseModel):
