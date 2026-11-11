@@ -58,6 +58,12 @@ CAPABILITY_DEFS: list[CapabilityDef] = [
         "后台维护两个 AI 共享的近期生活与待办和活动状态。关闭后停止整理，并停止向聊天与巡逻注入这些资料；已保存内容仍可查看编辑。",
         default_enabled=True,
     ),
+    CapabilityDef(
+        "life_diary", "生活日记", "life",
+        "从聊天里捕捉本人随口提到的生活片段，按事情发生的那一天写进日记本文件。关闭后停止收集与写入，已写入的日记文件不受影响。",
+        default_enabled=False,
+        runtime_note="日记写在本机 Obsidian 日记库（DiaryInbox）里，编辑仍回 Obsidian 做。",
+    ),
     CapabilityDef("expressive_voice", "主动语音", "media", "", default_enabled=False),
     CapabilityDef("music", "点歌", "media", "注入 [MUSIC:歌曲名 歌手名]，让模型可以点歌或推荐音乐。"),
     CapabilityDef("compose_music", "作曲 · 小音乐盒", "media", "开启后向两位 AI 提示 Strudel 作曲能力，可点曲或偶尔收到赠曲。关闭只停止提示，已保存的小曲仍可播放。", default_enabled=False),
@@ -670,8 +676,13 @@ async def build_capability_prompt_items(
 
     if is_capability_enabled("web_search") and _is_web_search_available():
         abilities.append(
-            "[WEB_SEARCH:查询内容] — 当用户问今天、最新、价格、新闻、政策、版本、资料核实，或你判断知识库中没有答案需要外部实时信息时使用。"
+            "[WEB_SEARCH:查询内容|选项] — 当用户问今天、最新、价格、新闻、政策、版本、资料核实，或你判断知识库中没有答案需要外部实时信息时使用。"
             "一次只写一个清晰查询；不要编造搜索结果。系统会搜索网页并把干净结果作为下一条消息发给你，你再根据结果自然回答。"
+            "选项可省略，系统会自己按查询意图判断；需要明确限定时再写："
+            "topic=news 或 general 或 finance（内容类型），time_range=day 或 week 或 month 或 year（只看这段时间内发布的），"
+            "fresh（强制实时抓取，适合天气、价格、比分这类随时更新的页面），"
+            "depth=advanced 或 basic 或 fast 或 ultra-fast（要更全的资料时用 advanced，会多花一次额度）。"
+            "多个选项之间用 | 分隔，例如：[WEB_SEARCH:今天北京天气|fresh]。"
             "如果用户给的是具体网址并要求你看看网页内容，使用 [WEB_EXTRACT:完整URL]。"
             "简单的常识问题，不需要联网搜索。"
         )

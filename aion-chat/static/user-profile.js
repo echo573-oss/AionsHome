@@ -279,6 +279,60 @@ profileEl('save').addEventListener('click', async () => {
 });
 connectCommonWS(message => {
   if (message.type === 'user_profile_changed' || message.type === 'capability_config_changed') loadProfile({background:true});
+  if (message.type === 'life_diary_changed') loadDiary();
+});
+function diaryToday() {
+  const now = new Date();
+  const pad = value => String(value).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+}
+async function loadDiary() {
+  const dateInput = profileEl('diaryDate');
+  if (!dateInput.value) dateInput.value = diaryToday();
+  try {
+    const data = await profileRequest('/api/life-diary?date=' + encodeURIComponent(dateInput.value));
+    profileEl('diaryEnabled').checked = !!data.enabled;
+    profileEl('diaryContent').value = data.content || '';
+    profileEl('diaryStatus').textContent = data.enabled
+      ? `已开启 · 静默 ${data.quiet_minutes || 30} 分钟后整理当天 · ${data.pending ? `${data.pending} 条待整理` : '没有待整理'}`
+        + `${data.failed ? ` · ${data.failed} 条未处理完整` : ''}${data.last_run_at ? ` · 最近整理 ${profileTime(data.last_run_at)}` : ''}`
+      : '已关闭，不会收集也不会写入';
+    profileEl('diaryPath').textContent = data.path || '';
+    profileEl('diaryError').textContent = data.last_error || '';
+    profileEl('diaryError').hidden = !data.last_error;
+  } catch (error) {
+    profileEl('diaryStatus').textContent = error.message || '加载失败';
+  }
+}
+profileEl('diaryDate').addEventListener('change', loadDiary);
+profileEl('diaryEnabled').addEventListener('change', async event => {
+  event.target.disabled = true;
+  try {
+    await profileRequest('/api/capabilities/life_diary', {
+      method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({enabled:event.target.checked})
+    });
+    await loadDiary();
+  } catch (error) {
+    event.target.checked = !event.target.checked;
+    showToast(error.message);
+  } finally { event.target.disabled = false; }
+});
+profileEl('diaryRun').addEventListener('click', async event => {
+  event.target.disabled = true;
+  try {
+    const result = await profileRequest('/api/life-diary/run', {method:'POST'});
+    await loadDiary();
+    showToast(result.ok ? '已整理一次' : '没有待整理的内容');
+  } catch (error) { showToast(error.message); }
+  finally { event.target.disabled = false; }
+});
+profileEl('diaryCopy').addEventListener('click', async () => {
+  const content = profileEl('diaryContent').value;
+  if (!content) return showToast('这一天没有内容');
+  try {
+    await navigator.clipboard.writeText(content);
+    showToast('已复制');
+  } catch (error) { showToast('复制失败，请手动选中'); }
 });
 profileEl('previewButton')?.addEventListener('click', () => loadProfile({background:true}));
 profileEl('previewEnd').addEventListener('click', () => {
@@ -297,4 +351,5 @@ fetch('/api/worldbook').then(r => r.json()).then(data => {
   if (data.user_name) profileEl('pageTitle').textContent = `${data.user_name}的近期生活`;
 }).catch(() => {});
 loadProfile();
-setInterval(() => { if (!document.hidden) loadProfile({background:true}); }, 60000);
+loadDiary();
+setInterval(() => { if (!document.hidden) { loadProfile({background:true}); loadDiary(); } }, 60000);

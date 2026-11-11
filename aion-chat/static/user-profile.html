@@ -51,6 +51,26 @@
       <div class="section-heading"><h3>最近惦记着的事</h3><button id="addEntry" class="quiet-button" type="button">＋ 添加内容</button></div>
       <div id="entries"><p class="profile-empty">加载中…</p></div>
     </section>
+    <section class="profile-section diary-section">
+      <div class="section-heading">
+        <h3>生活日记</h3>
+        <label class="toggle-switch" title="生活日记开关">
+          <input id="diaryEnabled" type="checkbox" aria-label="启用生活日记">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <p class="profile-meta" id="diaryStatus">加载中…</p>
+      <label class="field-label" for="diaryDate">查看日期</label>
+      <input id="diaryDate" type="date">
+      <label class="field-label" for="diaryContent">当天日记内容</label>
+      <textarea id="diaryContent" rows="10" readonly placeholder="这一天还没有写进日记的内容"></textarea>
+      <div class="editor-actions">
+        <button id="diaryCopy" class="quiet-button" type="button">复制</button>
+        <button id="diaryRun" class="save-button" type="button">立即整理</button>
+      </div>
+      <p class="profile-meta" id="diaryPath"></p>
+      <p class="profile-error" id="diaryError" hidden role="alert"></p>
+    </section>
   </div>
   <footer class="profile-savebar">
     <span id="saveHint" role="status">尚无修改</span>
@@ -59,6 +79,6 @@
   </footer>
 </main>
 <script src="/static/common.js"></script>
-<script src="/static/user-profile.js?v=20261024-1"></script>
+<script src="/static/user-profile.js?v=20261110-1"></script>
 </body>
 </html>

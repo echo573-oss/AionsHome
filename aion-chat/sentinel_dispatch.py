@@ -8,6 +8,7 @@ _enqueue_tasks = set()
 
 
 async def enqueue_event(event):
+    import life_diary
     import post_sentinel
     import kitchen_sentinel
     import kitchen
@@ -17,7 +18,10 @@ async def enqueue_event(event):
             try:
                 await post_sentinel.enqueue_event(event, wake=False)
             finally:
-                await kitchen_sentinel.enqueue_event(event, expected_generation=generation, wake=False)
+                try:
+                    await life_diary.enqueue_event(event, wake=False)
+                finally:
+                    await kitchen_sentinel.enqueue_event(event, expected_generation=generation, wake=False)
     finally:
         post_sentinel.wake()
         kitchen_sentinel.wake()

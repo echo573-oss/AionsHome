@@ -58,6 +58,8 @@ from routes import form_vault as form_vault_routes
 from routes import connor_browser as connor_browser_routes
 import post_sentinel
 import kitchen_sentinel
+import life_diary
+from routes import life_diary as life_diary_routes
 from routes import kitchen as kitchen_routes
 from routes import voice as voice_routes
 from routes import music as music_routes
@@ -186,6 +188,10 @@ async def lifespan(app: FastAPI):
     except Exception:
         logging.getLogger(__name__).exception("Post-sentinel startup skipped")
     await kitchen_sentinel.start()
+    try:
+        await life_diary.start()
+    except Exception:
+        logging.getLogger(__name__).exception("Life diary startup skipped")
     imported_music_requests = await init_music_station()
     if imported_music_requests:
         print(f"[music_station] 已补入 {imported_music_requests} 条历史点歌记录")
@@ -256,6 +262,7 @@ async def lifespan(app: FastAPI):
         await stop_sentinel_dispatch()
         await kitchen_sentinel.stop()
         await post_sentinel.stop()
+        await life_diary.stop()
         try:
             from billiards.service import get_service as billiards_service
             await billiards_service().stop()
@@ -365,6 +372,7 @@ app.include_router(user_profile.router)
 app.include_router(form_vault_routes.router)
 app.include_router(connor_browser_routes.router)
 app.include_router(kitchen_routes.router)
+app.include_router(life_diary_routes.router)
 app.include_router(voice_routes.router)
 app.include_router(music_routes.router)
 app.include_router(music_station_routes.router)
