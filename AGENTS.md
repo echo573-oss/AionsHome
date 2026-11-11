@@ -279,6 +279,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-tests.ps1
   非 GET 请求还要带上匹配的 `Origin`。参考 `test_local_http_routes.py`、`test_connor_browser_routes.py`。
 - `routes/chatroom.py` 的 `_reply_connor` 必须用 `_get_room_type(room_id)`，不要引用未定义的房间类型名（本地提交 `f51f124` 已修，不要回退）。
 
+### 2026-11-11 进展
+
+- **棋盘室 `aion-chat/spicy_board/`**：娱乐室新增 18+ 双人棋盘（`/spicy-board`，资源 `/spicy-board-assets/`），
+  引擎是外部项目 RennAkira/spicy-monopoly（CC BY-NC 4.0），以本机 sidecar 单独运行，**不 vendor 进仓库**。
+  `main.py` 启动时 `spicy_board.sidecar.ensure()`；模块缺失或 sidecar 未就绪只打日志，不影响主服务。
+  娱乐室大厅「还在等你的游戏」同时列出台球与棋盘室的未完对局。
+- **共读室门 `aion-chat/coread_door/`**：`/reading` 现在是共读室入口页（探测局域网 / 公网地址后跳转 NAS 上的共读室服务）；
+  原陪伴阅读页移到 `/reading-classic`，带 `?book=` 的旧链接仍由 `/reading` 回落到原页面。主页图标文案改为「共读室」。
+  这两个模块都按「路由装好才在 `asset_manifest` 里登记资源」的模式接入（`enable_*_assets()`），新增模块照此做。
+- **私聊 / 聊天室跳转参数**：`chat.js` / `chatroom.js` 用 `consumeLaunchQueryParams()` 读取 `?room=&msg=` 等一次性参数后立刻从地址栏去掉，
+  避免刷新后反复跳转。用 `vm` 跑 `chatroom.js` 片段的测试，沙箱里要提供 `URL`、`location.href` 和 `history.replaceState`。
+- **系统日志收起按钮**：收起 / 展开只绑定 `.syslog-detail-toggle`，复制按钮改用 `syslog-copy-btn` / `cr-syslog-copy-btn`，
+  之前点收起会误触复制全文。测试见 `test_system_log_toggle.js`。
+- **AGY（Antigravity CLI）与代理**：agy 的模型推理请求**不走 `HTTP(S)_PROXY`**，`AION_AGY_PROXY` 只能管到一部分流量。
+  出现 `FAILED_PRECONDITION: User location is not supported` 时，原因是推理请求直连了国内 IP，
+  要在 Clash Verge 打开 TUN（虚拟网卡模式，需服务模式），而不是继续加环境变量。
+- `requirements.txt`：edge-tts 升到 7.3.1。
 ### 提交与推送
 
 - 用户约定：**只有明确说要推送时才 `git push`**；日常本机改动不要自动同步到 GitHub。
