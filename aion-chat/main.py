@@ -63,6 +63,7 @@ from routes import life_diary as life_diary_routes
 from routes import kitchen as kitchen_routes
 from routes import voice as voice_routes
 from routes import music as music_routes
+from routes import music_presence as music_presence_routes
 from routes import music_station as music_station_routes
 from routes import taobao as taobao_routes
 from routes import album as album_routes
@@ -375,6 +376,7 @@ app.include_router(kitchen_routes.router)
 app.include_router(life_diary_routes.router)
 app.include_router(voice_routes.router)
 app.include_router(music_routes.router)
+app.include_router(music_presence_routes.router)
 app.include_router(music_station_routes.router)
 app.include_router(taobao_routes.router)
 app.include_router(album_routes.router)

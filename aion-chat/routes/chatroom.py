@@ -1285,7 +1285,18 @@ async def _process_chatroom_commands(
     full_text = META_TAG_PATTERN.sub("", full_text)
 
     full_text = await process_widget_control_commands(full_text, who_identity)
-    return _visible_chatroom_text(full_text), triggered
+    visible = _visible_chatroom_text(full_text)
+    try:
+        from music_presence import record_song_turn
+        await record_song_turn(
+            user_text,
+            visible,
+            source_conv=f"chatroom:{room_id}",
+            ai_msg_id=msg_id,
+        )
+    except Exception as exc:
+        print(f"[music_presence] 聊天室听歌记录失败: {type(exc).__name__}: {exc}")
+    return visible, triggered
 
 
 async def _start_chatroom_lounge_visit(

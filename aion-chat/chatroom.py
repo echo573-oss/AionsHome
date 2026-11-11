@@ -46,6 +46,7 @@ from context_blocks import (
     context_message,
 )
 from intimacy_skill import build_play_prompt
+from music_presence import build_now_playing_block
 from ws import manager
 
 # ── Connor-Codex 服务配置 ──
@@ -1168,6 +1169,16 @@ def _parse_digest_result(raw: str) -> Optional[dict]:
 #  群聊上下文构建
 # ══════════════════════════════════════════════════
 
+async def append_now_playing_state(state: list) -> None:
+    """正在播放且心跳新鲜时，把听歌状态并进聊天室的运行时通道。"""
+    text = await build_now_playing_block()
+    if not text:
+        return
+    message = context_message(CTX_RUNTIME, text)
+    if message is not None:
+        state.append(message)
+
+
 @timed("aion_context")
 async def build_aion_group_context(
     room_id: str,
@@ -1260,6 +1271,7 @@ async def build_aion_group_context(
         runtime_message = context_message(CTX_RUNTIME, runtime_block)
         if runtime_message is not None:
             state.append(runtime_message)
+    await append_now_playing_state(state)
     for text in (background_block, related_block):
         message = context_message(CTX_MEMORY, text)
         if message is not None:
@@ -1397,6 +1409,7 @@ async def build_connor_group_context(
         runtime_message = context_message(CTX_RUNTIME, runtime_block)
         if runtime_message is not None:
             state.append(runtime_message)
+    await append_now_playing_state(state)
     for text in (background_block, related_block):
         message = context_message(CTX_MEMORY, text)
         if message is not None:
@@ -1527,6 +1540,7 @@ async def build_connor_1v1_context(
         runtime_message = context_message(CTX_RUNTIME, runtime_block)
         if runtime_message is not None:
             state.append(runtime_message)
+    await append_now_playing_state(state)
     for text in (background_block, related_block):
         message = context_message(CTX_MEMORY, text)
         if message is not None:

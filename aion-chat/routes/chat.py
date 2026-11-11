@@ -33,6 +33,7 @@ from activity import get_activity_summary_for_prompt, get_user_dynamics_for_prom
 from message_dedup import build_message_dedupe_key, reserve_message_ingress
 from routes.files import export_conversation
 from routes.music import MUSIC_CMD_PATTERN
+from music_presence import build_now_playing_block
 from music_station import record_music_request
 from song_gen import SONG_CMD_PATTERN, clean_song_visible_reply
 from stream_reply import resolve_stream_failure
@@ -261,6 +262,11 @@ async def _build_private_context_messages(
         runtime_text += health_text
     messages += segments_to_messages([ContextSegment(CTX_RUNTIME, runtime_text)])
 
+    # 当前时间之后都是动态事实。没在听、或心跳过期时这里什么都不加。
+    now_playing_text = await build_now_playing_block()
+    if now_playing_text:
+        messages += segments_to_messages([ContextSegment(CTX_RUNTIME, now_playing_text)])
+
     messages += segments_to_messages(data)
     return messages
 
@@ -479,11 +485,14 @@ async def _prepare_private_memory_records(text, user_text=""):
     return MEMORY_CMD_PATTERN.sub("", text).strip() if matches else text, records
 
 
-async def _insert_private_memory_records(db, conv_id, user_msg_id, ai_msg_id, reply_ts, records):
+async def _insert_private_memory_records(
+    db, conv_id, user_msg_id, ai_msg_id, reply_ts, records,
+    *, cover: bool = True, source_label: str | None = None,
+):
     if not records:
         return []
 
-    sources = [f"private:{ai_msg_id}"]
+    sources = [source_label or f"private:{ai_msg_id}"]
     start_ts = reply_ts
     if user_msg_id:
         cursor = await db.execute(
@@ -518,6 +527,9 @@ async def _insert_private_memory_records(db, conv_id, user_msg_id, ai_msg_id, re
             "memory_kind_label": memory_kind_label(mem_type),
         })
         # 登记这轮消息已被覆盖，digest 再次取数时跳过，避免同一段对话被记两遍。
+        # 听歌在场记忆是额外一层，不把整轮对话标成已覆盖。
+        if not cover:
+            continue
         try:
             await mark_covered(
                 db, OWNER_MAIN, sources, memory_id=mem_id, origin="explicit",
@@ -526,6 +538,22 @@ async def _insert_private_memory_records(db, conv_id, user_msg_id, ai_msg_id, re
         except Exception as cov_exc:
             print(f"[memory_record] 覆盖登记失败，不影响写入: {type(cov_exc).__name__}")
     return saved
+
+
+async def _remember_song_turn(user_text, assistant_text, conv_id, user_msg_id, ai_msg_id):
+    """播放中的歌（或这轮明确提到的歌）记一条在场笔记，凑够再写入日常记忆。"""
+    try:
+        from music_presence import record_song_turn
+        return await record_song_turn(
+            user_text or "",
+            assistant_text or "",
+            source_conv=conv_id or "",
+            user_msg_id=user_msg_id or "",
+            ai_msg_id=ai_msg_id or "",
+        )
+    except Exception as exc:
+        print(f"[music_presence] 记下听歌时的对话失败: {type(exc).__name__}: {exc}")
+        return []
 
 
 async def _publish_private_memory_records(records, ai_msg_id, queue):
@@ -2097,6 +2125,7 @@ async def edit_resend_message(msg_id: str, body: MsgEditResend):
 
             ai_msg = {"id": ai_msg_id, "conv_id": conv_id, "role": "assistant", "content": full_text, "created_at": now2, "attachments": reply_atts, "reasoning_content": usage_meta.get("reasoning_content", "").strip()}
             await manager.broadcast({"type": "msg_created", "data": ai_msg})
+            saved_memories.extend(await _remember_song_turn(body.content, full_text, conv_id, msg_id, ai_msg_id))
             await _publish_private_memory_records(saved_memories, ai_msg_id, _q)
             await broadcast_app_supervision_command(supervision_command)
             await export_conversation(conv_id)
@@ -2836,6 +2865,7 @@ async def send_message(conv_id: str, body: MsgCreate):
 
             ai_msg = {"id": ai_msg_id, "conv_id": conv_id, "role": "assistant", "content": full_text, "created_at": now2, "attachments": reply_atts, "reasoning_content": usage_meta.get("reasoning_content", "").strip()}
             await manager.broadcast({"type": "msg_created", "data": ai_msg})
+            saved_memories.extend(await _remember_song_turn(body.content, full_text, conv_id, msg_id, ai_msg_id))
             await _publish_private_memory_records(saved_memories, ai_msg_id, _q)
             await broadcast_app_supervision_command(supervision_command)
             await export_conversation(conv_id)
@@ -4276,6 +4306,7 @@ async def regenerate_message(conv_id: str, context_limit: int = 30, whisper_mode
 
             ai_msg = {"id": ai_msg_id, "conv_id": conv_id, "role": "assistant", "content": full_text, "created_at": now2, "attachments": reply_atts, "reasoning_content": usage_meta.get("reasoning_content", "").strip()}
             await manager.broadcast({"type": "msg_created", "data": ai_msg})
+            saved_memories.extend(await _remember_song_turn(lounge_request_text, full_text, conv_id, trigger_user_id, ai_msg_id))
             await _publish_private_memory_records(saved_memories, ai_msg_id, _q)
             await export_conversation(conv_id)
 

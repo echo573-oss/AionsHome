@@ -2898,6 +2898,22 @@ window.jumpToGlobalSearchTarget = async function(target) {
 };
 
 // ── 音乐卡片 ──
+let chatMusicPresenceMeta = { source: 'chat_card', trackId: '', externalId: '', title: '', artist: '' };
+
+function musicCardById(songId) {
+  const wanted = String(songId);
+  for (const cards of Object.values(msgMusicCards)) {
+    const song = (cards || []).find(item => item && String(item.id) === wanted);
+    if (song) return song;
+  }
+  return null;
+}
+
+function bindChatMusicPresence(audio) {
+  if (!window.MusicPresence || !audio) return;
+  MusicPresence.bind(audio, () => chatMusicPresenceMeta);
+}
+
 function renderMusicCards(msgId) {
   const cards = msgMusicCards[msgId];
   if (!cards || !cards.length) return;
@@ -3003,7 +3019,10 @@ function playMusicOnline(songId) {
     const closeBtn = document.createElement('button');
     closeBtn.textContent = '✕';
     closeBtn.style.cssText = 'background:none;border:none;font-size:14px;cursor:pointer;color:var(--text2,#888);padding:0 4px;line-height:1;flex-shrink:0;';
-    closeBtn.onclick = () => { audio.pause(); audio.src = ''; wrap.style.display = 'none'; bar.value = 0; };
+    closeBtn.onclick = () => {
+      if (window.MusicPresence) MusicPresence.stop(audio);
+      audio.pause(); audio.src = ''; wrap.style.display = 'none'; bar.value = 0;
+    };
 
     wrap.appendChild(playBtn);
     wrap.appendChild(bar);
@@ -3013,6 +3032,15 @@ function playMusicOnline(songId) {
     document.body.appendChild(wrap);
   }
   const audio = document.getElementById('globalMusicAudio');
+  const song = musicCardById(songId) || {};
+  chatMusicPresenceMeta = {
+    source: 'chat_card',
+    trackId: String(songId),
+    externalId: String(songId),
+    title: song.name || '',
+    artist: song.artist || '',
+  };
+  bindChatMusicPresence(audio);
   audio.src = '/api/music/stream/' + songId;
   wrap.style.display = 'flex';
   document.getElementById('globalMusicBar').value = 0;
@@ -4432,6 +4460,7 @@ function formatGeneratedSongTime(seconds) {
 }
 
 function closeGeneratedSongPlayer() {
+  if (generatedSongAudio && window.MusicPresence) MusicPresence.stop(generatedSongAudio);
   if (generatedSongProgressFrame) {
     cancelAnimationFrame(generatedSongProgressFrame);
     generatedSongProgressFrame = null;
@@ -4486,6 +4515,9 @@ function openGeneratedSongPlayer(key) {
 
   const audio = new Audio(item.url);
   generatedSongAudio = audio;
+  if (window.MusicPresence) {
+    MusicPresence.bind(audio, () => ({ source: 'generated', title, artist: '', trackId: '' }));
+  }
   const playBtn = overlay.querySelector('.song-player-play');
   const progress = overlay.querySelector('.song-player-progress');
   const currentEl = overlay.querySelector('.song-player-current');
