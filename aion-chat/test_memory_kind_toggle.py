@@ -98,6 +98,12 @@ class MemoryKindToggleFrontendTests(unittest.TestCase):
 
         self.assertIn('select id="editKind"', main_html)
         self.assertIn("memory_kind:el('editKind').value", main_html)
+        self.assertIn("chatroom:['lumi_thought','Lumi的想法']", main_html)
+        self.assertIn("main:['lan_thought','岚的想法']", main_html)
+        self.assertIn("Lumi的想法", chatroom_js)
+        self.assertIn("selectChatroomMemoryKind('${m.id}','lumi_thought',event)", chatroom_js)
+        chatroom_html = (ROOT / "static" / "chatroom.html").read_text(encoding="utf-8")
+        self.assertIn('data-kind="lumi_thought"', chatroom_html)
         self.assertNotIn("toggleMemoryKind('", main_html)
         self.assertIn("/api/memory-library/${store}", main_html)
         self.assertIn("openChatroomMemoryKindMenu('", chatroom_js)
