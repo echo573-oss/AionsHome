@@ -2127,7 +2127,7 @@ function crBuildAmbientLogEntry(d, detailId) {
     <span class="ambient-log-status ${statusCls}">${esc(status)}</span>
     <span class="cr-syslog-tokens">${esc(reason)}${topic}</span>
     ${detailHtml ? `<button class="cr-syslog-detail-toggle" onclick="crToggleSysLogDetail('${detailId}')">详情 ▾</button>` : ''}
-    ${detailHtml ? `<button class="cr-syslog-detail-toggle" onclick="crCopySystemLogEntry('${d._id}')">复制全文</button>` : ''}
+    ${detailHtml ? `<button class="cr-syslog-copy-btn" onclick="crCopySystemLogEntry('${d._id}')">复制全文</button>` : ''}
     ${detailHtml ? `<div class="cr-syslog-detail" id="${detailId}">${detailHtml}</div>` : ''}
   </div>`;
 }
@@ -2204,7 +2204,7 @@ function crRenderSystemLogList() {
       <span class="cr-syslog-tokens">${tokenText}</span>
       <span class="${memCls}">${memText}</span>
       ${hasDetail ? `<button class="cr-syslog-detail-toggle" onclick="crToggleSysLogDetail('${detailId}')">详情 ▾</button>` : ''}
-      ${hasDetail ? `<button class="cr-syslog-detail-toggle" onclick="crCopySystemLogEntry('${d._id}')">复制全文</button>` : ''}
+      ${hasDetail ? `<button class="cr-syslog-copy-btn" onclick="crCopySystemLogEntry('${d._id}')">复制全文</button>` : ''}
       ${hasDetail ? `<div class="cr-syslog-detail" id="${detailId}">${detailHtml}</div>` : ''}
     </div>`;
   }).join('');
@@ -7769,9 +7769,26 @@ function crToyCloseEditor() { document.getElementById('crToyEditorOverlay').clas
     rooms = [];
     renderRoomList();
   }
-  const initParams = new URLSearchParams(location.search);
-  const targetRoomId = initParams.get('room');
-  const targetMsgId = initParams.get('msg');
+function consumeLaunchQueryParams(keys) {
+  const url = new URL(location.href);
+  const consumed = {};
+  let changed = false;
+  for (const key of keys) {
+    consumed[key] = url.searchParams.get(key);
+    if (url.searchParams.has(key)) {
+      url.searchParams.delete(key);
+      changed = true;
+    }
+  }
+  if (changed) {
+    const qs = url.searchParams.toString();
+    history.replaceState(history.state, '', url.pathname + (qs ? '?' + qs : '') + url.hash);
+  }
+  return consumed;
+}
+
+  // 记忆库「查看原文」带上的 ?room=&msg= 只用这一次，随即从地址栏去掉。
+  const { room: targetRoomId, msg: targetMsgId } = consumeLaunchQueryParams(['room', 'msg']);
   // 默认打开最后一次聊天的房间
   if (targetRoomId && rooms.some(r => r.id === targetRoomId)) {
     await selectRoom(targetRoomId);

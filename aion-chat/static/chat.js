@@ -125,6 +125,26 @@ window.addEventListener('storage', e => {
 });
 
 // ── 初始化 ──
+// 记忆库「查看原文」会带上 ?conv=&msg=；只用这一次，随即从地址栏去掉，
+// 以免之后每次打开主聊天都再次跳回那条原文。
+function consumeLaunchQueryParams(keys) {
+  const url = new URL(location.href);
+  const consumed = {};
+  let changed = false;
+  for (const key of keys) {
+    consumed[key] = url.searchParams.get(key);
+    if (url.searchParams.has(key)) {
+      url.searchParams.delete(key);
+      changed = true;
+    }
+  }
+  if (changed) {
+    const qs = url.searchParams.toString();
+    history.replaceState(history.state, '', url.pathname + (qs ? '?' + qs : '') + url.hash);
+  }
+  return consumed;
+}
+
 async function init() {
   const modelReady = privateModelReady = api("GET", "/api/models").then(result => {
     models = result;
@@ -141,9 +161,7 @@ async function init() {
     .catch(() => { chatroomConfig = {}; });
   loadProactiveCompanionshipStatus();
   [worldBook, conversations] = await bootstrap;
-  const initParams = new URLSearchParams(location.search);
-  const targetConvId = initParams.get('conv');
-  const targetMsgId = initParams.get('msg');
+  const { conv: targetConvId, msg: targetMsgId } = consumeLaunchQueryParams(['conv', 'msg']);
   const lastId = localStorage.getItem('aion_last_conv');
   if (currentConvId) {
     // The desktop is already interactive; keep a conversation opened by the
@@ -2647,7 +2665,7 @@ function renderSystemLogList() {
       <span class="syslog-tokens">${tokenText}</span>
       <span class="${memCls}">${memText}</span>
       ${hasDetail ? `<button class="syslog-detail-toggle" onclick="toggleSysLogDetail('${detailId}')">详情 ▾</button>` : ''}
-      ${hasDetail ? `<button class="syslog-detail-toggle" onclick="copySystemLogEntry('${d._id}')">复制全文</button>` : ''}
+      ${hasDetail ? `<button class="syslog-copy-btn" onclick="copySystemLogEntry('${d._id}')">复制全文</button>` : ''}
       ${hasDetail ? `<div class="syslog-detail" id="${detailId}">${detailHtml}</div>` : ''}
     </div>`;
   }).join('');
@@ -2657,8 +2675,9 @@ function toggleSysLogDetail(id) {
   const el = document.getElementById(id);
   if (!el) return;
   el.classList.toggle('show');
-  const btn = el.previousElementSibling;
-  if (btn && btn.classList.contains('syslog-detail-toggle')) {
+  // previousElementSibling would be the copy button; only relabel the toggle.
+  const btn = el.parentElement?.querySelector('.syslog-detail-toggle');
+  if (btn) {
     btn.textContent = el.classList.contains('show') ? '收起 ▴' : '详情 ▾';
   }
 }
@@ -5872,7 +5891,7 @@ function onWhisperModeChange() {
 // ── 子页面 iframe 浮层逻辑 ──
 let currentSubPage = null;
 window.getCurrentConversationId = function() { return currentConvId || ''; };
-const _subPageNames = {'/':'主页','/settings':'设置','/memory':'记忆库','/diary':'日记本','/worldbook':'世界书','/schedule':'日程','/camera':'摄像头','/monitor-logs':'监控日志','/location':'定位','/heart-whispers':'心语','/wishes':'许愿池','/playground':'娱乐室','/playground/explore':'去外面逛逛','/billiards':'台球室'};
+const _subPageNames = {'/':'主页','/settings':'设置','/memory':'记忆库','/diary':'日记本','/worldbook':'世界书','/schedule':'日程','/camera':'摄像头','/monitor-logs':'监控日志','/location':'定位','/heart-whispers':'心语','/wishes':'许愿池','/playground':'娱乐室','/playground/explore':'去外面逛逛','/billiards':'台球室','/spicy-board':'棋盘室','/reading':'共读室','/reading-classic':'陪伴阅读'};
 function parseSubPageColor(value) {
   if (!value || value === 'transparent') return null;
   const hexMatch = value.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);

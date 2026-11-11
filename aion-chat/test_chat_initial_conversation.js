@@ -16,10 +16,11 @@ function sourceBetween(startMarker, endMarker) {
   return CHAT_JS.slice(start, end);
 }
 
-async function runInit({ initialConversations, lastConversationId = null, apiOverride = () => undefined }) {
+async function runInit({ initialConversations, lastConversationId = null, apiOverride = () => undefined, search = '' }) {
   const requests = [];
   const storage = new Map();
   if (lastConversationId) storage.set('aion_last_conv', lastConversationId);
+  const jumpCalls = [];
 
   const elements = new Map([
     ['modelSelect', { value: 'test-model' }],
@@ -33,6 +34,15 @@ async function runInit({ initialConversations, lastConversationId = null, apiOve
     ['maxTokensValue', { textContent: '' }],
     ['sendBtn', { disabled: true }],
   ]);
+
+  let href = 'https://test.invalid/chat' + search;
+  const history = {
+    state: null,
+    replaceState(state, _title, url) {
+      this.state = state;
+      href = new URL(url, 'https://test.invalid').href;
+    },
+  };
 
   const context = {
     models: [],
@@ -52,7 +62,14 @@ async function runInit({ initialConversations, lastConversationId = null, apiOve
     _memoryRecordMsgIds: new Set(),
     _memoryRecordContent: {},
     MSG_PAGE_SIZE: 50,
-    location: { search: '' },
+    location: {
+      get href() { return href; },
+      get search() { return new URL(href).search; },
+      get pathname() { return new URL(href).pathname; },
+      get hash() { return new URL(href).hash; },
+    },
+    history,
+    URL,
     URLSearchParams,
     setTimeout,
     Notification: { permission: 'denied' },
@@ -100,19 +117,19 @@ async function runInit({ initialConversations, lastConversationId = null, apiOve
     setCurrentMessages(messages) { context.currentMessages = messages; },
     closeSidebar() {},
     connectWS() {},
-    jumpToChatMessage() {},
+    jumpToChatMessage(...args) { jumpCalls.push(args); },
     loadOlderMessages() {},
   };
 
   vm.createContext(context);
   const source = [
-    sourceBetween('async function init()', 'function escHtml'),
+    sourceBetween('function consumeLaunchQueryParams', 'function escHtml'),
     sourceBetween('async function newConversation()', 'async function refreshCurrentConversationFromServer'),
   ].join('\n');
   vm.runInContext(`${source}\nthis.runInit = init;`, context);
   await context.runInit();
 
-  return { context, requests, storage };
+  return { context, requests, storage, jumpCalls };
 }
 
 test('an empty installation creates and selects its first conversation', async () => {
@@ -165,6 +182,46 @@ test('an existing last conversation is selected without creating another one', a
     requests.filter(request => request.method === 'POST' && request.url === '/api/conversations').length,
     0,
   );
+});
+
+test('a memory-library jump query is used once and then removed from the address', async () => {
+  const source = {
+    id: 'conv-source',
+    title: '原文对话',
+    model: 'test-model',
+    created_at: 1,
+    updated_at: 2,
+    message_count: 3,
+  };
+  const later = {
+    id: 'conv-later',
+    title: '后来的对话',
+    model: 'test-model',
+    created_at: 3,
+    updated_at: 4,
+    message_count: 1,
+  };
+  const first = await runInit({
+    initialConversations: [source, later],
+    lastConversationId: later.id,
+    search: '?conv=conv-source&msg=msg-42',
+  });
+  await new Promise(resolve => setTimeout(resolve, 120));
+
+  assert.equal(first.context.currentConvId, source.id);
+  assert.deepEqual(first.jumpCalls, [[source.id, 'msg-42']]);
+  assert.equal(first.context.location.search, '');
+  assert.equal(new URL(first.context.location.href).pathname, '/chat');
+
+  const second = await runInit({
+    initialConversations: [source, later],
+    lastConversationId: later.id,
+    search: first.context.location.search,
+  });
+  await new Promise(resolve => setTimeout(resolve, 120));
+  assert.equal(second.context.currentConvId, later.id);
+  assert.deepEqual(second.jumpCalls, []);
+  assert.equal(second.context.location.search, '');
 });
 
 test('desktop opens before a pending chat initialization and remains on initialization failure', async () => {

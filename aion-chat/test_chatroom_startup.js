@@ -16,7 +16,7 @@ test('room messages appear while listener, model and companionship requests are 
     renderRoomList() {}, renderEmptyChat() {}, rooms: [], currentRoom: null,
     selectRoom: async id => { calls.push(id); },
     crAmbientSyncRunning() {}, connectWS() { calls.push('ws'); }, resizeInput() {},
-    URLSearchParams, location: { search: '' }, console, setTimeout, window: {},
+    URLSearchParams, URL, location: { search: '', href: 'http://localhost:8080/chatroom' }, history: { state: null, replaceState() {} }, console, setTimeout, window: {},
   };
   vm.runInNewContext(source.slice(source.lastIndexOf('(async function init()')), context);
   await new Promise(resolve => setImmediate(resolve));

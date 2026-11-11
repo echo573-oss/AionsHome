@@ -1611,7 +1611,7 @@ body[data-theme="light"] .monitor-camera-snapshot summary {
 .ambient-log-status.reject { color: #ff9800; }
 .ambient-log-status.skip { color: var(--text3); }
 .cr-syslog-error-tag { color: #f44336; font-weight: 600; font-size: 11px; margin-right: 6px; }
-.cr-syslog-detail-toggle {
+.cr-syslog-detail-toggle, .cr-syslog-copy-btn {
   background: none;
   border: 1px solid var(--border);
   color: var(--text3);
@@ -1621,7 +1621,7 @@ body[data-theme="light"] .monitor-camera-snapshot summary {
   cursor: pointer;
   margin-left: 6px;
 }
-.cr-syslog-detail-toggle:hover { color: var(--text); border-color: var(--text2); }
+.cr-syslog-detail-toggle:hover, .cr-syslog-copy-btn:hover { color: var(--text); border-color: var(--text2); }
 .cr-syslog-detail {
   display: none;
   margin-top: 6px;

@@ -1001,8 +1001,8 @@ body[data-theme="light"] .link-preview-card:hover {
 .syslog-tokens { color:var(--text2); margin-right:8px; }
 .syslog-mem { color:#1a73e8; }
 .syslog-mem.none { color:var(--text3); opacity:0.5; }
-.syslog-detail-toggle { background:none; border:1px solid var(--border); color:var(--text3); border-radius:4px; padding:1px 6px; font-size:10px; cursor:pointer; margin-left:6px; }
-.syslog-detail-toggle:hover { color:var(--text); border-color:var(--text2); }
+.syslog-detail-toggle, .syslog-copy-btn { background:none; border:1px solid var(--border); color:var(--text3); border-radius:4px; padding:1px 6px; font-size:10px; cursor:pointer; margin-left:6px; }
+.syslog-detail-toggle:hover, .syslog-copy-btn:hover { color:var(--text); border-color:var(--text2); }
 .syslog-detail { display:none; margin-top:6px; border:1px solid var(--border); border-radius:6px; background:var(--surface2); padding:10px; font-size:11px; overflow:visible; }
 .syslog-detail.show { display:block; }
 .syslog-detail .debug-prompt-list,
