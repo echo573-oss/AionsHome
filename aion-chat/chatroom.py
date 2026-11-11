@@ -14,7 +14,7 @@ from database import get_db
 from model_json import extract_json_object
 from memory import (
     get_embedding, cosine_similarity, _pack_embedding, _unpack_embedding, _keyword_match_score,
-    _memory_time_payload, _format_raw_evidence_block,
+    _memory_time_payload, _format_raw_evidence_block, normalize_chatroom_memory_kind,
 )
 from memory_coverage import (
     OWNER_SECOND,
@@ -435,7 +435,8 @@ async def recall_chatroom_memories(
     """从 Connor 记忆库召回相关摘要记忆（所有聊天窗口共享）。"""
     select_cols = (
         "id, room_id, scope, scope AS type, content, keywords, importance, "
-        "embedding, source_start_ts, source_end_ts, created_at, unresolved, source_msg_id, evidence_summary"
+        "embedding, source_start_ts, source_end_ts, created_at, unresolved, source_msg_id, "
+        "evidence_summary, memory_kind"
     )
     query_emb = await get_embedding(query_text, timeout=4)
     if not query_emb:
@@ -446,6 +447,7 @@ async def recall_chatroom_memories(
             cur = await db.execute(
                 f"SELECT {select_cols} FROM chatroom_memories "
                 "WHERE scope = ? AND COALESCE(archive_state,'active')='active' "
+                "AND LOWER(COALESCE(memory_kind,'long_term'))!='lumi_thought' "
                 "ORDER BY unresolved DESC, importance DESC, created_at DESC LIMIT ?",
                 (scope, min(top_k, min_results)),
             )
@@ -492,6 +494,9 @@ async def recall_chatroom_memories(
             if len(matched) >= min(top_k, min_results):
                 break
             if mem["id"] in seen_ids:
+                continue
+            # A thought joins only when the topic score clears the threshold.
+            if str(mem.get("memory_kind") or "").strip().lower() == "lumi_thought":
                 continue
             matched.append(mem)
             seen_ids.add(mem["id"])
@@ -588,6 +593,7 @@ async def build_surfacing_chatroom_memories(
             cur = await db.execute(
                 "SELECT id, content, scope AS type, created_at, source_start_ts, source_end_ts, evidence_summary FROM chatroom_memories "
                 "WHERE scope = ? AND COALESCE(archive_state,'active')='active' "
+                "AND LOWER(COALESCE(memory_kind,'long_term'))!='lumi_thought' "
                 "AND COALESCE(source_end_ts, source_start_ts, created_at) > ? "
                 "ORDER BY COALESCE(source_end_ts, source_start_ts, created_at) DESC LIMIT ?",
                 ("connor", three_days_ago, max_total)
@@ -730,7 +736,7 @@ async def save_chatroom_memory(
     emb_blob = _pack_embedding(emb) if emb else None
     mem_id = f"crm_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
     now = float(created_at) if created_at else time.time()
-    kind = memory_kind if memory_kind in ('daily','friend') else 'long_term'
+    kind = normalize_chatroom_memory_kind(memory_kind)
     async with get_db() as db:
         await db.execute(
             "INSERT INTO chatroom_memories "

@@ -54,7 +54,7 @@ from context_blocks import (
 from music_station import record_music_request
 from memory import (
     get_embedding, _pack_embedding, memory_kind_for_type, memory_kind_label,
-    _memory_time_payload, instant_digest,
+    _memory_time_payload, instant_digest, normalize_chatroom_memory_kind,
 )
 from memory_write_policy import resolve_memory_kind
 from memory_coverage import OWNER_MAIN, OWNER_SECOND, mark_covered
@@ -4735,7 +4735,7 @@ async def list_room_memories(room_id: str):
                     item.get("source_start_ts") and item.get("source_end_ts")
                     and not str(item.get("source_msg_id") or "").strip()
                 ) else "long_term"
-            item["memory_kind_label"] = {'daily':'日常','friend':'朋友记忆','long_term':'长期重要'}.get(item['memory_kind'],'长期重要')
+            item["memory_kind_label"] = memory_kind_label(item["memory_kind"])
             explicit_source = bool(str(item.get("source_msg_id") or "").strip())
             source_ids = _source_ids_for_chatroom_memory(item)
             if explicit_source:
@@ -4777,7 +4777,7 @@ async def create_memory(room_id: str, body: MemoryCreate):
         content=body.content,
         keywords=body.keywords,
         importance=body.importance,
-        memory_kind=body.memory_kind if body.memory_kind in ('daily','friend') else 'long_term',
+        memory_kind=normalize_chatroom_memory_kind(body.memory_kind),
         evidence_summary=body.evidence_summary,
     )
     return {"ok": True, "id": mem_id}
@@ -4799,7 +4799,7 @@ async def update_memory(mem_id: str, body: MemoryUpdate):
             vals.append(body.importance)
         if body.memory_kind is not None:
             sets.append("memory_kind=?")
-            vals.append(body.memory_kind if body.memory_kind in ('daily','friend') else 'long_term')
+            vals.append(normalize_chatroom_memory_kind(body.memory_kind))
         if body.unresolved is not None:
             sets.append("unresolved=?")
             vals.append(1 if body.unresolved else 0)

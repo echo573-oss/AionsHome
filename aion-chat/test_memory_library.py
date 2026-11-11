@@ -89,6 +89,50 @@ class MemoryLibraryTests(unittest.IsolatedAsyncioTestCase):
             ).status_code,
         )
 
+    async def test_lumi_thought_is_separate_and_stays_in_her_store(self):
+        async with self.connect() as db:
+            await db.execute(
+                "INSERT INTO chatroom_memories (id,content,memory_kind,scope,source_msg_id,archive_state) "
+                "VALUES (?,?,?,?,?,?)",
+                ('lumi-1', 'Lumi的想法：值得以后继续琢磨。', 'lumi_thought', 'connor', '[]', 'active'),
+            )
+            await db.commit()
+        thought = self.client.get('/api/memory-library/chatroom?kind=lumi_thought').json()
+        self.assertEqual([row['id'] for row in thought['items']], ['lumi-1'])
+        self.assertEqual(thought['items'][0]['memory_kind'], 'lumi_thought')
+        long_term = self.client.get('/api/memory-library/chatroom?kind=long_term').json()
+        self.assertNotIn('lumi-1', [row['id'] for row in long_term['items']])
+        self.assertEqual(
+            400,
+            self.client.post(
+                '/api/memory-library/main',
+                json={'content':'不是 Lumi 的记忆', 'memory_kind':'lumi_thought'},
+            ).status_code,
+        )
+        self.assertEqual(self.client.get('/api/memory-library/main?kind=lumi_thought').status_code, 400)
+        self.assertEqual(self.client.get('/api/memory-library/chatroom?kind=lan_thought').status_code, 400)
+        created = self.client.post(
+            '/api/memory-library/chatroom',
+            json={'content':'一条可以改分类的想法', 'memory_kind':'lumi_thought'},
+        )
+        self.assertEqual(created.status_code, 200)
+        mem_id = created.json()['id']
+        self.assertEqual(
+            self.client.put(
+                f'/api/memory-library/chatroom/{mem_id}',
+                json={'content':'改回日常', 'memory_kind':'daily'},
+            ).status_code,
+            200,
+        )
+        self.assertEqual(
+            [row['id'] for row in self.client.get('/api/memory-library/chatroom?kind=lumi_thought').json()['items']],
+            ['lumi-1'],
+        )
+        self.assertEqual(
+            self.client.get(f'/api/memory-library/chatroom/{mem_id}').json()['item']['memory_kind'],
+            'daily',
+        )
+
     async def test_large_library_returns_only_requested_page_without_vectors(self):
         async with self.connect() as db:
             await db.executemany('INSERT INTO memories (id,content,embedding) VALUES (?,?,?)',

@@ -5409,8 +5409,10 @@ function restoreChatroomMemoryPosition(memId) {
   });
 }
 
+const CHATROOM_KIND_LABELS = {daily:'日常', long_term:'长期重要', friend:'朋友记忆', lumi_thought:'Lumi的想法'};
+
 function chatroomMemoryKind(m) {
-  return ['daily','friend'].includes(m?.memory_kind) ? m.memory_kind : 'long_term';
+  return ['daily','friend','lumi_thought'].includes(m?.memory_kind) ? m.memory_kind : 'long_term';
 }
 
 function setChatroomMemoryKindFilter(kind) {
@@ -5437,13 +5439,13 @@ function renderChatroomMemories(focusMemId = '') {
     : all.filter(m => chatroomMemoryKind(m) === chatroomMemoryKindFilter);
   const filtered = query
     ? kindFiltered.filter(m => {
-      const kindLabel = m.memory_kind_label || (chatroomMemoryKind(m) === 'daily' ? '日常' : '长期重要');
+      const kindLabel = m.memory_kind_label || CHATROOM_KIND_LABELS[chatroomMemoryKind(m)] || '长期重要';
       return String(m.content || '').toLowerCase().includes(query)
         || String(m.keywords || '').toLowerCase().includes(query)
         || kindLabel.includes(query);
     })
     : kindFiltered;
-  const filterText = {daily:'日常',long_term:'长期重要',friend:'朋友记忆'}[chatroomMemoryKindFilter] || '';
+  const filterText = CHATROOM_KIND_LABELS[chatroomMemoryKindFilter] || '';
   if (countBadge) {
     countBadge.textContent = `共 ${all.length} 条`
       + (filterText ? `，${filterText} ${kindFiltered.length} 条` : '')
@@ -5462,13 +5464,14 @@ function renderChatroomMemories(focusMemId = '') {
     const kw = m.keywords ? `关键词: ${esc(m.keywords)}` : '';
     const hasSource = Number(m.source_count || 0) > 0;
     const curKind = chatroomMemoryKind(m);
-    const kindLabel = m.memory_kind_label || (curKind === 'daily' ? '日常' : '长期重要');
+    const kindLabel = m.memory_kind_label || CHATROOM_KIND_LABELS[curKind] || '长期重要';
     const kindClass = curKind === 'daily' ? 'daily' : 'long-term';
     const menuOpen = chatroomMemoryKindMenuId === m.id;
     const kindMenu = menuOpen ? `<div class="mem-kind-menu" onclick="event.stopPropagation()">
       <button class="${curKind === 'long_term' ? 'active' : ''}" onclick="selectChatroomMemoryKind('${m.id}','long_term',event)">长期重要</button>
       <button class="${curKind === 'daily' ? 'active' : ''}" onclick="selectChatroomMemoryKind('${m.id}','daily',event)">日常</button>
       <button class="${curKind === 'friend' ? 'active' : ''}" onclick="selectChatroomMemoryKind('${m.id}','friend',event)">朋友记忆</button>
+      <button class="${curKind === 'lumi_thought' ? 'active' : ''}" onclick="selectChatroomMemoryKind('${m.id}','lumi_thought',event)">Lumi的想法</button>
     </div>` : '';
     const unresolved = Boolean(m.unresolved);
     const importance = m.importance == null
@@ -5598,7 +5601,7 @@ async function selectChatroomMemoryKind(memId, nextKind, event) {
   const prevKind = mem.memory_kind;
   const prevLabel = mem.memory_kind_label;
   mem.memory_kind = nextKind;
-  mem.memory_kind_label = {daily:'日常',long_term:'长期重要',friend:'朋友记忆'}[nextKind];
+  mem.memory_kind_label = CHATROOM_KIND_LABELS[nextKind] || '长期重要';
   chatroomMemoryKindMenuId = null;
   renderChatroomMemories(memId);
   try {

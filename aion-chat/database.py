@@ -768,6 +768,7 @@ async def init_db():
             ("period_end_ts", "REAL"),
             ("compression_batch_id", "TEXT DEFAULT ''"),
             ("source_memory_ids", "TEXT"),
+            ("source_conv", "TEXT"),
         ]:
             try:
                 await db.execute(f"ALTER TABLE chatroom_memories ADD COLUMN {col} {defn}")

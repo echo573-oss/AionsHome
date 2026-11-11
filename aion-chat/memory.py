@@ -67,17 +67,35 @@ SUMMARY_MEMORY_TYPES = {"digest", "seeky_digest", "seeky_compressed", "daily"}
 LONG_TERM_MEMORY_TYPE = "important"
 
 
+CHATROOM_MEMORY_KINDS = ('daily', 'long_term', 'friend', 'lumi_thought')
+
+
 def memory_kind_for_type(memory_type: str) -> str:
-    """Keep social memories separate from daily summaries and important memories."""
-    if str(memory_type or '').strip().lower() == 'friend':
+    """Keep social memories and personal thoughts separate from summaries."""
+    kind = str(memory_type or '').strip().lower()
+    if kind == 'friend':
         return 'friend'
-    if str(memory_type or '').strip().lower() == 'lan_thought':
+    if kind == 'lan_thought':
         return 'lan_thought'
-    return "daily" if str(memory_type or "").strip().lower() in SUMMARY_MEMORY_TYPES else "long_term"
+    if kind == 'lumi_thought':
+        return 'lumi_thought'
+    return "daily" if kind in SUMMARY_MEMORY_TYPES else "long_term"
 
 
 def memory_kind_label(memory_type: str) -> str:
-    return {'daily':'日常', 'long_term':'长期重要', 'friend':'朋友记忆', 'lan_thought':'岚的想法'}[memory_kind_for_type(memory_type)]
+    return {
+        'daily': '日常',
+        'long_term': '长期重要',
+        'friend': '朋友记忆',
+        'lan_thought': '岚的想法',
+        'lumi_thought': 'Lumi的想法',
+    }[memory_kind_for_type(memory_type)]
+
+
+def normalize_chatroom_memory_kind(memory_kind: str | None) -> str:
+    """Keep Lumi's thoughts as their own kind; unknown labels stay long-term."""
+    kind = str(memory_kind or '').strip().lower()
+    return kind if kind in CHATROOM_MEMORY_KINDS else 'long_term'
 
 
 def _clean_evidence_summary(value, limit: int = 900) -> str:
@@ -543,7 +561,7 @@ async def build_surfacing_memories(topic: str = "", keywords: list[str] = None,
             cur = await db.execute(
                 "SELECT id, content, type, created_at, source_start_ts, source_end_ts, evidence_summary FROM memories "
                 "WHERE COALESCE(archive_state,'active')='active' "
-                "AND LOWER(type)!='lan_thought' "
+                "AND LOWER(type) NOT IN ('lan_thought','lumi_thought') "
                 "AND COALESCE(source_end_ts, source_start_ts, created_at) > ? "
                 "AND id NOT IN (SELECT value FROM json_each(?)) "
                 "ORDER BY COALESCE(source_end_ts, source_start_ts, created_at) DESC LIMIT ?",

@@ -211,7 +211,7 @@ async def list_memories(
         where.append(kind_sql)
         filtered_where.append(kind_sql)
     elif kind == "long_term":
-        kind_sql = "LOWER(type) NOT IN ('daily','digest','seeky_digest','seeky_compressed','friend','lan_thought')"
+        kind_sql = "LOWER(type) NOT IN ('daily','digest','seeky_digest','seeky_compressed','friend','lan_thought','lumi_thought')"
         where.append(kind_sql)
         filtered_where.append(kind_sql)
     elif kind == 'friend':
@@ -239,7 +239,7 @@ async def list_memories(
             "SELECT COUNT(*) AS total, "
             "SUM(CASE WHEN LOWER(type) IN ('daily','digest','seeky_digest','seeky_compressed') "
             "THEN 1 ELSE 0 END) AS daily, "
-            "SUM(CASE WHEN LOWER(type) NOT IN ('daily','digest','seeky_digest','seeky_compressed','friend','lan_thought') "
+            "SUM(CASE WHEN LOWER(type) NOT IN ('daily','digest','seeky_digest','seeky_compressed','friend','lan_thought','lumi_thought') "
             "THEN 1 ELSE 0 END) AS long_term, "
             "SUM(CASE WHEN LOWER(type)='friend' THEN 1 ELSE 0 END) AS friend, "
             "SUM(CASE WHEN LOWER(type)='lan_thought' THEN 1 ELSE 0 END) AS lan_thought "
