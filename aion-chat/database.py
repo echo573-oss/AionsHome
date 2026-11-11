@@ -1049,6 +1049,8 @@ async def init_db():
             )
         """)
         await _recover_lounge_runtime_state(db)
+        from music_presence import ensure_music_presence_schema
+        await ensure_music_presence_schema(db)
         await db.commit()
 
 

@@ -299,6 +299,7 @@
     state.lyricLines.forEach((line, index) => { if (line.time <= audio.currentTime + .03) active = index; });
     if (active !== state.activeLyric) {
       state.activeLyric = active;
+      if (window.MusicPresence) MusicPresence.notifyLyric(audio, String(active));
       document.querySelectorAll('.lyric-line').forEach(line => line.classList.remove('active'));
       const element = document.querySelector(`.lyric-line[data-index="${active}"]`);
       if (element) { element.classList.add('active'); element.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
@@ -508,6 +509,7 @@
   }
 
   function clearCurrentPlayer() {
+    if (window.MusicPresence) MusicPresence.stop(audio);
     audio.pause();
     audio.removeAttribute('src');
     audio.load();
@@ -537,6 +539,17 @@
   }
 
   function bindEvents() {
+    if (window.MusicPresence) {
+      MusicPresence.bind(audio, () => {
+        const track = currentTrack();
+        return {
+          source: 'station',
+          trackId: track ? track.id : '',
+          title: track ? (track.title || '') : '',
+          artist: track ? (track.artist || '') : '',
+        };
+      });
+    }
     $('backButton').onclick = () => {
       if (window.parent !== window && typeof window.parent.navigateToHome === 'function') window.parent.navigateToHome();
       else location.href = '/';

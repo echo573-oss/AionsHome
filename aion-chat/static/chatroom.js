@@ -602,6 +602,22 @@ async function crHandleToyCommand(data) {
   crShowToyCapsule(msgId, commands);
 }
 
+let crMusicPresenceMeta = { source: 'chatroom_card', trackId: '', externalId: '', title: '', artist: '' };
+
+function crMusicCardById(songId) {
+  const wanted = String(songId);
+  for (const cards of Object.values(crMusicCards)) {
+    const song = (cards || []).find(item => item && String(item.id) === wanted);
+    if (song) return song;
+  }
+  return null;
+}
+
+function bindChatroomMusicPresence(audio) {
+  if (!window.MusicPresence || !audio) return;
+  MusicPresence.bind(audio, () => crMusicPresenceMeta);
+}
+
 function crRenderMusicCards(msgId) {
   const cards = crMusicCards[msgId];
   if (!cards || !cards.length) return;
@@ -690,7 +706,10 @@ function crPlayMusicOnline(songId) {
     const closeBtn = document.createElement('button');
     closeBtn.textContent = '✕';
     closeBtn.style.cssText = 'background:none;border:none;font-size:14px;cursor:pointer;color:var(--text2,#888);padding:0 4px;line-height:1;flex-shrink:0;';
-    closeBtn.onclick = () => { audio.pause(); audio.currentTime = 0; audio.src = ''; wrap.style.display = 'none'; bar.value = 0; };
+    closeBtn.onclick = () => {
+      if (window.MusicPresence) MusicPresence.stop(audio);
+      audio.pause(); audio.currentTime = 0; audio.src = ''; wrap.style.display = 'none'; bar.value = 0;
+    };
 
     wrap.appendChild(playBtn);
     wrap.appendChild(bar);
@@ -700,6 +719,15 @@ function crPlayMusicOnline(songId) {
     document.body.appendChild(wrap);
   }
   const audio = document.getElementById('crMusicAudio');
+  const song = crMusicCardById(songId) || {};
+  crMusicPresenceMeta = {
+    source: 'chatroom_card',
+    trackId: String(songId),
+    externalId: String(songId),
+    title: song.name || '',
+    artist: song.artist || '',
+  };
+  bindChatroomMusicPresence(audio);
   audio.src = '/api/music/stream/' + songId;
   wrap.style.display = 'flex';
   document.getElementById('crMusicBar').value = 0;
@@ -6358,6 +6386,7 @@ function crFormatGeneratedSongTime(seconds) {
 }
 
 function crCloseGeneratedSongPlayer() {
+  if (crGeneratedSongAudio && window.MusicPresence) MusicPresence.stop(crGeneratedSongAudio);
   if (crGeneratedSongProgressFrame) {
     cancelAnimationFrame(crGeneratedSongProgressFrame);
     crGeneratedSongProgressFrame = null;
@@ -6412,6 +6441,9 @@ function crOpenGeneratedSongPlayer(key) {
 
   const audio = new Audio(item.url);
   crGeneratedSongAudio = audio;
+  if (window.MusicPresence) {
+    MusicPresence.bind(audio, () => ({ source: 'chatroom_generated', title, artist: '', trackId: '' }));
+  }
   const playBtn = overlay.querySelector('.song-player-play');
   const progress = overlay.querySelector('.song-player-progress');
   const currentEl = overlay.querySelector('.song-player-current');
