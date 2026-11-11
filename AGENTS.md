@@ -287,6 +287,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-tests.ps1
   娱乐室大厅「还在等你的游戏」同时列出台球与棋盘室的未完对局。
 - **共读室门 `aion-chat/coread_door/`**：`/reading` 现在是共读室入口页（探测局域网 / 公网地址后跳转 NAS 上的共读室服务）；
   原陪伴阅读页移到 `/reading-classic`，带 `?book=` 的旧链接仍由 `/reading` 回落到原页面。主页图标文案改为「共读室」。
+  共读室的局域网 / 公网地址**不写进仓库**：放本机 `aion-chat/data/coread_door.json`（`lan_url` / `public_url`），或环境变量 `AIONSHOME_COREAD_LAN_URL` / `AIONSHOME_COREAD_PUBLIC_URL`；都没配时入口页提示未配置。
   这两个模块都按「路由装好才在 `asset_manifest` 里登记资源」的模式接入（`enable_*_assets()`），新增模块照此做。
 - **私聊 / 聊天室跳转参数**：`chat.js` / `chatroom.js` 用 `consumeLaunchQueryParams()` 读取 `?room=&msg=` 等一次性参数后立刻从地址栏去掉，
   避免刷新后反复跳转。用 `vm` 跑 `chatroom.js` 片段的测试，沙箱里要提供 `URL`、`location.href` 和 `history.replaceState`。
