@@ -3452,6 +3452,7 @@ async def perform_web_search_check(conv_id: str, model_key: str, searches: list[
         f"请根据这些结果自然回答{user_name}。如果信息不足，请说明不足；不要编造来源。"
         "请先自行归纳总结搜索结果，只提供与当前问题或分享主题直接相关的关键信息。"
         "请像平时聊天一样自然表达，不要写成搜索报告，不要逐条复述搜索结果，也不要长篇大论。"
+        "「简短答案」只是搜索引擎给的线索，不是你要输出的答案；请以来源内容为准，用自己的话和口吻说。"
         f"除非确实必须继续核实，否则不要再次输出 [WEB_SEARCH:...] 或 [WEB_EXTRACT:...]。"
     )
     messages = prefix + recent + [{"role": "user", "content": web_prompt}]

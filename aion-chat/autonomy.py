@@ -18,7 +18,13 @@ from link_preview import build_link_preview_attachments, strip_urls_for_message
 from lounge_friends import LoungeFriend, redact_visitor_key
 from lounge_visit_reporting import publish_outbound_report
 from tts import synthesize_message_tts_later
-from web_search import WEB_SEARCH_CMD_PATTERN, clean_web_command_text, is_web_search_available, run_web_commands
+from web_search import (
+    WEB_SEARCH_CMD_PATTERN,
+    clean_web_command_text,
+    is_web_search_available,
+    parse_web_search_command,
+    run_web_commands,
+)
 from ws import manager
 from autonomy_state import (
     ACTOR_IDS,
@@ -834,6 +840,8 @@ async def _run_web_roam(actor: str) -> dict:
         '格式：{"search_command":"[WEB_SEARCH:查询内容]","reason":"一句话理由"}'
     ))
     query = _web_roam_query_from_result(result) or "今日有趣的新鲜资讯"
+    # 查询串可能带 |选项（搜索参数），展示给用户时只保留查询本身。
+    display_query = parse_web_search_command(query)[0] or query
 
     try:
         context_items = await run_web_commands([query], [])
@@ -846,31 +854,32 @@ async def _run_web_roam(actor: str) -> dict:
     messages = await _actor_context(actor, 30)
     messages.append({"role": "user", "content": (
         "[上网冲浪搜索完成]\n"
-        f"你刚才在空闲时搜索了「{query}」。以下是系统搜索结果：\n\n"
+        f"你刚才在空闲时搜索了「{display_query}」。以下是系统搜索结果：\n\n"
         f"{web_context}\n\n"
-        f"请给{user_name}发一条自然消息。可以自然说“我刚才搜索了{query}”，并说说自己的想法或感触。"
+        f"请给{user_name}发一条自然消息。可以自然说“我刚才搜索了{display_query}”，并说说自己的想法或感触。"
         "请先自行归纳总结搜索结果，只提供与当前问题或分享主题直接相关的关键信息。"
         "请像平时聊天一样自然表达，不要写成搜索报告，不要逐条复述搜索结果，也不要长篇大论。"
+        "「简短答案」只是搜索引擎给的线索，不是你要输出的内容；请以来源内容为准，用自己的话和口吻说。"
         "如果搜索成功，请在回复末尾保留一个与你分享内容最相关的原网址；"
         "系统会先把它解析成可点击卡片，再从聊天正文和 TTS 中移除网址。"
         "不要再输出 [WEB_SEARCH:...]，不要编造来源。"
     )})
     reply = clean_web_command_text(await _call_actor(actor, messages)).strip()
     if not reply:
-        reply = f"我刚才搜索了「{query}」，但这次没整理出特别值得分享的内容。"
+        reply = f"我刚才搜索了「{display_query}」，但这次没整理出特别值得分享的内容。"
 
     source_attachments = await _web_roam_link_previews(reply, web_context)
     message = await _save_private_message(actor, reply, source_attachments)
     event = await append_idle_event(
         actor,
         "web_roam",
-        f"{actor_name}上网冲浪搜索了：{_clip(query, 80)}",
+        f"{actor_name}上网冲浪搜索了：{_clip(display_query, 80)}",
         _clip(reply, 300),
         target_type="web",
-        target_id=query,
+        target_id=display_query,
         result_type="message" if message else "",
         result_id=(message or {}).get("id", ""),
-        metadata={"query": query, "reason": str(result.get("reason") or "").strip()},
+        metadata={"query": display_query, "reason": str(result.get("reason") or "").strip()},
     )
     return {"event": event, "message": message, "query": query}
 

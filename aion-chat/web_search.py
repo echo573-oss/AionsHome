@@ -14,6 +14,8 @@ TAVILY_SEARCH_URL = "https://api.tavily.com/search"
 TAVILY_EXTRACT_URL = "https://api.tavily.com/extract"
 WEB_SEARCH_CMD_PATTERN = re.compile(r"\[WEB_SEARCH\s*[：:]\s*([^\]]+)\]", re.IGNORECASE)
 WEB_EXTRACT_CMD_PATTERN = re.compile(r"\[WEB_EXTRACT\s*[：:]\s*([^\]]+)\]", re.IGNORECASE)
+# 搜索指令的选项段：[WEB_SEARCH:查询|选项]。沿用 [MEMORY_SEARCH:查询|选项] 的写法。
+WEB_SEARCH_OPTION_SEPARATOR = re.compile(r"[|｜]")
 _WEB_CMD_START_RE = re.compile(
     rf"(?P<voice>{OPEN}|{LEGACY_OPEN})|"
     r"(?:\[|［|【)\s*(?:(?:WEB_SEARCH|WEB_EXTRACT|MEMORY_SEARCH|SELFIE|DRAW)\s*[：:]|BAND_VIBRATE\s*:"
@@ -25,6 +27,10 @@ _WEB_CMD_START_RE = re.compile(
 )
 _MAX_QUERIES = 3
 _MAX_EXTRACT_URLS = 3
+# Tavily 支持的取值，模型给的非法值一律忽略。
+_TAVILY_TOPICS = {"general", "news", "finance"}
+_TAVILY_TIME_RANGES = {"day", "week", "month", "year"}
+_TAVILY_SEARCH_DEPTHS = {"basic", "advanced", "fast", "ultra-fast"}
 
 
 class TavilyError(RuntimeError):
@@ -37,6 +43,43 @@ def tavily_api_key() -> str:
 
 def is_web_search_available() -> bool:
     return bool(tavily_api_key())
+
+
+def parse_web_search_command(raw: str) -> tuple[str, dict[str, Any]]:
+    """拆出 [WEB_SEARCH:查询|选项] 里的查询文本和 Tavily 参数。
+
+    选项沿用 [MEMORY_SEARCH:查询|选项] 的写法，用 | 分隔，键值对用 = 连接。
+    非法或无法识别的选项直接丢弃，不影响查询本身。
+    """
+    text = (raw or "").strip()
+    if not text:
+        return "", {}
+    parts = [part.strip() for part in WEB_SEARCH_OPTION_SEPARATOR.split(text)]
+    query = parts[0]
+    options: dict[str, Any] = {}
+    for option in parts[1:]:
+        if not option:
+            continue
+        key, _, value = option.partition("=")
+        key = key.strip().lower()
+        value = value.strip()
+        if key == "fresh" and not value:
+            # 简写：总是实时抓取，不走缓存副本。
+            options["max_age_hours"] = 0
+        elif key == "topic" and value.lower() in _TAVILY_TOPICS:
+            options["topic"] = value.lower()
+        elif key == "time_range" and value.lower() in _TAVILY_TIME_RANGES:
+            options["time_range"] = value.lower()
+        elif key == "max_age_hours":
+            try:
+                hours = int(value)
+            except ValueError:
+                continue
+            if -1 <= hours <= 720:
+                options["max_age_hours"] = hours
+        elif key == "depth" and value.lower() in _TAVILY_SEARCH_DEPTHS:
+            options["search_depth"] = value.lower()
+    return query, options
 
 
 def clean_web_command_text(text: str) -> str:
@@ -97,7 +140,8 @@ def format_tavily_context(payload: dict, *, kind: str = "search", max_chars_per_
 
 def format_web_system_message(actor_name: str, searches: list[str], extracts: list[str]) -> str:
     parts: list[str] = []
-    for query in searches[:_MAX_QUERIES]:
+    for raw in searches[:_MAX_QUERIES]:
+        query, _ = parse_web_search_command(raw)
         if query.strip():
             parts.append(f"搜索「{query.strip()}」")
     for url in extracts[:_MAX_EXTRACT_URLS]:
@@ -107,7 +151,13 @@ def format_web_system_message(actor_name: str, searches: list[str], extracts: li
     return f"{actor_name}发起了联网搜索：{action}"
 
 
-async def tavily_search(query: str, *, max_results: int = 5, timeout: float = 30.0) -> dict[str, Any]:
+async def tavily_search(
+    query: str,
+    *,
+    max_results: int = 5,
+    timeout: float = 30.0,
+    options: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     query = query.strip()
     if not query:
         raise TavilyError("搜索内容为空")
@@ -116,14 +166,25 @@ async def tavily_search(query: str, *, max_results: int = 5, timeout: float = 30
         raise TavilyError("未配置 Tavily API key")
     payload = {
         "query": query,
-        "search_depth": "basic",
+        # 让 Tavily 按查询意图自动配置 topic / time_range 等参数；显式传入的选项优先。
+        "auto_parameters": True,
         "max_results": max(1, min(8, int(max_results or 5))),
-        "include_answer": False,
+        "include_answer": True,
         "include_raw_content": False,
         "include_images": False,
         "include_usage": True,
     }
-    return await _post_tavily(TAVILY_SEARCH_URL, key, payload, timeout=timeout)
+    # search_depth 不写死：auto_parameters 会按查询意图自动选择，需要精确控制时由选项显式指定。
+    payload.update(options or {})
+    try:
+        return await _post_tavily(TAVILY_SEARCH_URL, key, payload, timeout=timeout)
+    except TavilyError as error:
+        # 免费额度下 max_age_hours 的实时抓取可能因容量被拒（434）。退回缓存副本重试，
+        # 保住这次搜索本身，而不是整条失败。
+        if "max_age_hours" not in payload or "[434]" not in str(error):
+            raise
+        retry = {k: v for k, v in payload.items() if k != "max_age_hours"}
+        return await _post_tavily(TAVILY_SEARCH_URL, key, retry, timeout=timeout)
 
 
 async def tavily_extract(url: str, *, query: str = "", timeout: float = 30.0) -> dict[str, Any]:
@@ -149,8 +210,11 @@ async def tavily_extract(url: str, *, query: str = "", timeout: float = 30.0) ->
 
 async def run_web_commands(searches: list[str], extracts: list[str]) -> list[str]:
     contexts: list[str] = []
-    for query in [item.strip() for item in searches if item.strip()][:_MAX_QUERIES]:
-        payload = await tavily_search(query)
+    for raw in [item.strip() for item in searches if item.strip()][:_MAX_QUERIES]:
+        query, options = parse_web_search_command(raw)
+        if not query:
+            continue
+        payload = await tavily_search(query, options=options)
         contexts.append(format_tavily_context(payload, kind="search"))
     for url in [item.strip() for item in extracts if item.strip()][:_MAX_EXTRACT_URLS]:
         payload = await tavily_extract(url)
