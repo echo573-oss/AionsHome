@@ -14,12 +14,26 @@ _LOCK = Lock()
 _CACHED_SIGNATURE: tuple[tuple[str, int, int], ...] | None = None
 _CACHED_MANIFEST: dict | None = None
 _BILLIARDS_ENABLED = False
+_SPICY_BOARD_ENABLED = False
+_COREAD_DOOR_ENABLED = False
 
 
 def enable_billiards_assets():
     """Advertise optional assets only after their HTTP routes were installed."""
     global _BILLIARDS_ENABLED
     _BILLIARDS_ENABLED = True
+
+
+def enable_spicy_board_assets():
+    """Advertise the velvet board room only after its HTTP routes were installed."""
+    global _SPICY_BOARD_ENABLED
+    _SPICY_BOARD_ENABLED = True
+
+
+def enable_coread_door_assets():
+    """Advertise the shared reading-room door only after its HTTP routes were installed."""
+    global _COREAD_DOOR_ENABLED
+    _COREAD_DOOR_ENABLED = True
 
 _DOCUMENT_ROUTES = {
     "/": "home.html",
@@ -46,7 +60,7 @@ _DOCUMENT_ROUTES = {
     "/diary": "diary.html",
     "/activity-logs": "activity-logs.html",
     "/family-dynamics": "family-dynamics.html",
-    "/reading": "reading.html",
+    "/reading-classic": "reading.html",
     "/theater": "theater.html",
     "/date-theater": "date_theater.html",
     "/ghost-forest": "ghost-forest.html",
@@ -83,6 +97,12 @@ def _iter_client_assets():
     pool = BASE_DIR / "billiards" / "static"
     if _BILLIARDS_ENABLED and (pool / "index.html").is_file():
         yield "/billiards", pool / "index.html", "document"
+    velvet = BASE_DIR / "spicy_board" / "static"
+    if _SPICY_BOARD_ENABLED and (velvet / "index.html").is_file():
+        yield "/spicy-board", velvet / "index.html", "document"
+    door = BASE_DIR / "coread_door" / "static"
+    if _COREAD_DOOR_ENABLED and (door / "index.html").is_file():
+        yield "/reading", door / "index.html", "document"
     for route, filename in _DOCUMENT_ROUTES.items():
         path = static_dir / filename
         if path.is_file():
@@ -97,8 +117,14 @@ def _iter_client_assets():
             yield "/static/" + path.relative_to(static_dir).as_posix(), path, "audio"
 
     for directory, prefix in ((BASE_DIR / "entertainment", "/entertainment-assets/"),
-                              (pool, "/billiards-assets/")):
+                              (pool, "/billiards-assets/"),
+                              (velvet, "/spicy-board-assets/"),
+                              (door, "/coread-door-assets/")):
         if directory == pool and not _BILLIARDS_ENABLED:
+            continue
+        if directory == velvet and not _SPICY_BOARD_ENABLED:
+            continue
+        if directory == door and not _COREAD_DOOR_ENABLED:
             continue
         for path in directory.rglob("*"):
             if not path.is_file():

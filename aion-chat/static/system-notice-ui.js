@@ -7,7 +7,7 @@
 
   const SCHEDULE_NOTICE = /^(?:(?:⏰|📅|👀)\uFE0F?\s*)?(【[^】]+】设定了(?:闹铃|日程|监督))\s*[：:]/u;
   const GAME_LOBBIES = new Map([
-    ['桌球', '/billiards'], ['斗地主', '/doudizhu'],
+    ['桌球', '/billiards'], ['棋盘室', '/spicy-board'], ['斗地主', '/doudizhu'],
     ['德州扑克', '/texas-holdem'], ['吹牛骰子', '/liars-dice'],
   ]);
 

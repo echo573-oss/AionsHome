@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>棋盘室</title>
+  <link rel="stylesheet" href="/spicy-board-assets/styles.css">
+</head>
+<body data-theme="dark">
+  <section id="lobby" class="lobby">
+    <nav class="masthead">
+      <button class="quiet" id="lobbyBack" type="button">‹ 娱乐厅</button>
+      <span class="brand">THE VELVET BOARD</span>
+      <span class="safeword" title="说出这个词，立刻停止">安全词 404</span>
+    </nav>
+    <header class="hero">
+      <p class="kicker">两个人的棋盘</p>
+      <h1>棋盘室</h1>
+      <p>掷一枚骰子，走到哪一格就做哪一件事。规则和任务都由本机引擎给出，这边只负责把棋盘摆出来，并留下桌边说话的位置。</p>
+    </header>
+    <p id="lobbyError" class="error" hidden></p>
+    <section class="challenge" aria-labelledby="challengeTitle">
+      <div class="section-title">
+        <h2 id="challengeTitle">今晚，和谁坐下来？</h2>
+        <span id="challengerName">你来开局</span>
+      </div>
+      <div class="opponent-picks">
+        <button class="choice" data-opponent="aion" type="button" aria-pressed="true">
+          <img src="/public/gropicon1.png" alt="">
+          <span><strong id="aionChoiceName">AI</strong><small>一起走棋、聊聊天</small></span>
+          <b class="pick-mark" aria-hidden="true">✓</b>
+        </button>
+        <button class="choice" data-opponent="connor" type="button" aria-pressed="false">
+          <img src="/public/codexicon.png" alt="">
+          <span><strong id="connorChoiceName">另一位伴侣</strong><small>一起走棋、聊聊天</small></span>
+          <b class="pick-mark" aria-hidden="true">✓</b>
+        </button>
+      </div>
+      <div class="setup-grid">
+        <label>强度
+          <select id="flavor">
+            <option value="light">轻度</option>
+            <option value="medium" selected>适中</option>
+            <option value="heavy">浓烈</option>
+          </select>
+        </label>
+        <label>回合
+          <select id="gameLength">
+            <option value="12">速玩 12 回合</option>
+            <option value="18" selected>正常 18 回合</option>
+            <option value="24">超长 24 回合</option>
+          </select>
+        </label>
+        <label>身份卡
+          <select id="identityMode">
+            <option value="off">关闭</option>
+            <option value="mixed" selected>混合</option>
+            <option value="nsfw_only">仅角色</option>
+          </select>
+        </label>
+        <label>你的性别
+          <select id="p1Sex"><option>男</option><option>女</option></select>
+        </label>
+        <label>你的角色
+          <select id="p1Role"><option>攻</option><option>受</option><option>兼</option></select>
+        </label>
+        <label id="p2SexLabel">对方性别
+          <select id="p2Sex"><option>女</option><option>男</option></select>
+        </label>
+        <label>对方角色
+          <select id="p2Role"><option>受</option><option>攻</option><option>兼</option></select>
+        </label>
+        <label class="wide">不想碰到的内容（用逗号分开，可留空）
+          <input id="redline" type="text" maxlength="200" placeholder="例如：道具名、某类玩法">
+        </label>
+      </div>
+      <label class="check"><input id="openAnal" type="checkbox"> 本局开放后庭（默认关闭）</label>
+      <label class="check"><input id="setupConfirmed" type="checkbox"> 我已了解规则，也知道安全词是 404，说出来就立刻停止</label>
+      <div class="challenge-actions">
+        <button id="startGame" class="primary" type="button" disabled>开始这一局 <span aria-hidden="true">↗</span></button>
+      </div>
+    </section>
+    <section id="resumeSection" class="resume" hidden>
+      <div class="section-title"><h2>棋盘还在等你</h2></div>
+      <div id="resumeList"></div>
+    </section>
+    <footer class="credit">棋盘引擎来自 <a href="https://github.com/RennAkira/spicy-monopoly" target="_blank" rel="noopener">涩涩大富翁</a>（CC BY-NC 4.0 · Ren &amp; Puppy）。本页是小家自己的房间，引擎单独跑在这台电脑上。</footer>
+  </section>
+
+  <section id="room" class="room" hidden>
+    <nav class="masthead">
+      <button class="quiet" id="roomBack" type="button">‹ 大厅</button>
+      <span class="brand">THE VELVET BOARD</span>
+      <span class="safeword" title="说出这个词，立刻停止">安全词 404</span>
+    </nav>
+    <header class="scoreboard" id="scoreboard"></header>
+    <div class="table">
+      <div class="board-wrap">
+        <div id="board" class="board" aria-label="二十格棋盘"></div>
+      </div>
+      <aside class="tray">
+        <section class="event-card" id="eventCard"></section>
+        <section class="actions" id="actions"></section>
+        <section class="table-chat">
+          <h2>桌边聊聊</h2>
+          <div id="chatLog" class="chat-log"></div>
+          <p id="chatError" class="error" hidden></p>
+          <form id="chatForm" class="chat-form">
+            <input id="chatInput" type="text" maxlength="2000" placeholder="说一句桌上的话…" autocomplete="off">
+            <button type="submit" class="primary">发送</button>
+          </form>
+        </section>
+      </aside>
+    </div>
+  </section>
+  <script src="/spicy-board-assets/room.js"></script>
+</body>
+</html>

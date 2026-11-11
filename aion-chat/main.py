@@ -255,6 +255,13 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         print(f"[billiards] recovery skipped: {type(exc).__name__}")
     try:
+        from spicy_board.sidecar import ensure as ensure_spicy_board
+        result = await asyncio.to_thread(ensure_spicy_board)
+        if not result.get("ok"):
+            print(f"[spicy_board] sidecar not ready: {result.get('error')}")
+    except Exception as exc:
+        print(f"[spicy_board] sidecar skipped: {type(exc).__name__}")
+    try:
         yield
     finally:
         qq_social_task.cancel()
@@ -411,6 +418,20 @@ try:
     enable_billiards_assets()
 except Exception as exc:
     print(f"[billiards] module unavailable: {type(exc).__name__}")
+try:
+    from spicy_board.routes import install as install_spicy_board
+    install_spicy_board(app)
+    from asset_manifest import enable_spicy_board_assets
+    enable_spicy_board_assets()
+except Exception as exc:
+    print(f"[spicy_board] module unavailable: {type(exc).__name__}")
+try:
+    from coread_door.routes import install as install_coread_door
+    install_coread_door(app)
+    from asset_manifest import enable_coread_door_assets
+    enable_coread_door_assets()
+except Exception as exc:
+    print(f"[coread_door] module unavailable: {type(exc).__name__}")
 app.include_router(seeky_routes.router)
 app.include_router(wallet_routes.router)
 app.include_router(connor_wallet_routes.router)
@@ -594,10 +615,6 @@ async def activity_logs_page():
 @app.get("/family-dynamics")
 async def family_dynamics_page():
     return FileResponse(BASE_DIR / "static" / "family-dynamics.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
-
-@app.get("/reading")
-async def reading_page():
-    return FileResponse(BASE_DIR / "static" / "reading.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 @app.get("/theater")
 async def theater_page():

@@ -95,6 +95,7 @@ body[data-page=entertainment][data-theme=dark] {
 .game.seeky { --game-tint: #70b9d8; --game-wash: #70b9d812; }
 .game.hug { --game-tint: #dc9a87; --game-wash: #dc9a8712; }
 .game.explore { --game-tint: #a6b98b; --game-wash: #a6b98b12; }
+.game.velvet { --game-tint: #c4a07a; --game-wash: #8b3a4a18; }
 .game > div { flex: 1; min-width: 0; }
 .game-icon { flex-shrink: 0; object-fit: contain; width: 48px; height: 48px; border-radius: 12px; }
 .ball {
